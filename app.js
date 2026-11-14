@@ -653,7 +653,7 @@
     document.documentElement.classList.toggle('auth-locked',locked);
     const gate=$('authLanding'),panel=$('cloudPanel');gate.hidden=!locked;
     if(locked){if(panel.parentElement!==$('authMount'))$('authMount').appendChild(panel)}else if(panel.parentElement===$('authMount'))$('todayPanel').insertAdjacentElement('beforebegin',panel);
-    $('cloudGuest').hidden=!!user;$('cloudSigned').hidden=!user||locked;$('cloudRecovery').hidden=!recovery||!user;$('cloudBoot').hidden=!user||!locked||recovery;
+    $('cloudGuest').hidden=!!user;renderAuth();$('cloudSigned').hidden=!user||locked;$('cloudRecovery').hidden=!recovery||!user;$('cloudBoot').hidden=!user||!locked||recovery;
     $('cloudBootText').textContent=bootError||'Preparando seu guarda-roupa…';
     $('cloudState').textContent='';
     $('cloudIdentity').textContent=user?.email||'Conta VESTE';
@@ -829,25 +829,61 @@
     finally{db?.close();busy=false;render();schedule(100)}
   }
   function returnUrl(){return location.origin+location.pathname}
+  let authScreen='login',sentEmail='',sentMode='';
+  const routes={login:'',signup:'cadastro',reset:'recuperar-senha'};
+  function screenFrom(search){const route=new URLSearchParams(search).get('auth');return route==='cadastro'?'signup':route==='recuperar-senha'?'reset':'login'}
+  function passwordError(p,q){return p.length<8?'Use uma senha com pelo menos 8 caracteres.':p!==q?'As senhas não coincidem.':''}
+  function renderAuth(){
+    if(!$('cloudLoginForm'))return;
+    for(const [id,mode] of [['cloudLoginForm','login'],['cloudSignupForm','signup'],['cloudResetForm','reset'],['cloudSent','sent']])$(id).hidden=authScreen!==mode;
+    $('cloudHeading').textContent=user?(recovery?'Escolha uma nova senha.':'Seu closet, onde estiver.'):{login:'Bem-vindo ao VESTE.',signup:'Crie sua conta.',reset:'Recupere sua senha.',sent:'Confira seu e-mail.'}[authScreen];
+    $('cloudSentText').textContent=sentMode==='reset'?'Se houver uma conta vinculada ao endereço informado, você receberá instruções para redefinir sua senha.':'Se o cadastro puder ser concluído, você receberá um link de confirmação. Confira também o spam.';
+    $('cloudSentEmail').textContent=sentEmail;
+    for(const id of ['cloudLogin','cloudCreateAccount','cloudSendReset','cloudGoSignup','cloudGoReset','cloudBackSignup','cloudBackReset','cloudBackSent','cloudChangePassword'])$(id).disabled=busy;
+  }
+  function goAuth(next,options={}){
+    if(user||busy&&!options.force||!['login','signup','reset','sent'].includes(next))return;
+    const email=$(authScreen==='signup'?'cloudSignupEmail':authScreen==='reset'?'cloudResetEmail':'cloudEmail').value.trim()||sentEmail;
+    for(const id of ['cloudPassword','cloudSignupPassword','cloudSignupConfirm'])$(id).value='';
+    if(email&&next!=='sent')$(next==='signup'?'cloudSignupEmail':next==='reset'?'cloudResetEmail':'cloudEmail').value=email;
+    authScreen=next;const u=new URL(location.href);
+    if(routes[next])u.searchParams.set('auth',routes[next]);else u.searchParams.delete('auth');
+    try{history[options.replace||next==='sent'?'replaceState':'pushState'](null,'',u.pathname+u.search+u.hash)}catch{}
+    msg('');renderAuth();
+    if(!busy)$(next==='signup'?'cloudSignupEmail':next==='reset'?'cloudResetEmail':next==='sent'?'cloudBackSent':'cloudEmail').focus();
+  }
+  function authError(e){
+    const code=e?.code||'',m=String(e?.message||e);
+    if(code==='invalid_credentials'||/invalid login credentials/i.test(m))return 'E-mail ou senha incorretos.';
+    if(code==='email_not_confirmed'||/email not confirmed/i.test(m))return 'Confirme seu e-mail antes de entrar. Verifique a caixa de entrada e o spam.';
+    if(code==='weak_password')return 'Escolha uma senha mais forte.';
+    if(/rate_limit|rate limit/i.test(code+' '+m))return 'Limite de tentativas atingido. Tente novamente mais tarde.';
+    return m.slice(0,250);
+  }
   async function authAction(mode){
-    if(busy)return;busy=true;render();
-    const email=$('cloudEmail').value.trim(),password=$('cloudPassword').value;
-    for(const id of ['cloudLogin','cloudSignup','cloudReset'])$(id).disabled=true;
+    if(busy||user||authScreen!==mode)return;
+    const field=$(mode==='signup'?'cloudSignupEmail':mode==='reset'?'cloudResetEmail':'cloudEmail'),email=field.value.trim();
+    const password=mode==='signup'?$('cloudSignupPassword').value:mode==='login'?$('cloudPassword').value:'';
+    msg('');
+    if(!email||!field.checkValidity()){msg('Informe um e-mail válido.');field.focus();return}
+    if(mode==='signup'){const err=passwordError(password,$('cloudSignupConfirm').value);if(err){msg(err);return}}
+    if(mode==='login'&&!password){msg('Informe sua senha.');return}
+    busy=true;render();
     try{
-      if(!email||!$('cloudEmail').checkValidity())throw new Error('Informe um e-mail válido.');
-      if(mode!=='reset'&&password.length<8)throw new Error('Use uma senha com pelo menos 8 caracteres.');
       const c=await load();
-      if(mode==='reset'){const {error}=await c.auth.resetPasswordForEmail(email,{redirectTo:returnUrl()});if(error)throw error;msg('Se a conta existir, verifique seu e-mail para redefinir a senha.');return}
-      const r=mode==='signup'?await c.auth.signUp({email,password,options:{emailRedirectTo:returnUrl()}}):await c.auth.signInWithPassword({email,password});if(r.error)throw r.error;
-      if(r.data.session?.user){put(marker,{id:r.data.session.user.id,email:r.data.session.user.email||email});location.reload();return}
-      msg('Cadastro solicitado. Confirme seu e-mail e depois entre no VESTE.');
-    }catch(e){msg(String(e?.message||e).slice(0,250))}
-    finally{$('cloudPassword').value='';busy=false;for(const id of ['cloudLogin','cloudSignup','cloudReset'])$(id).disabled=false;render()}
+      if(mode==='reset'){const {error}=await c.auth.resetPasswordForEmail(email,{redirectTo:returnUrl()});if(error)throw error;sentEmail=email;sentMode='reset';goAuth('sent',{force:true});return}
+      const r=mode==='signup'?await c.auth.signUp({email,password,options:{emailRedirectTo:returnUrl()}}):await c.auth.signInWithPassword({email,password});
+      if(r.error)throw r.error;
+      if(r.data.session?.user){put(marker,{id:r.data.session.user.id,email:r.data.session.user.email||email});location.replace(returnUrl());return}
+      if(mode==='signup'){sentEmail=email;sentMode='signup';goAuth('sent',{force:true});return}
+      msg('Não foi possível iniciar a sessão. Confira seus dados.');
+    }catch(e){msg(authError(e))}
+    finally{busy=false;render()}
   }
   async function changePassword(){
-    if(busy)return;const password=$('cloudNewPassword').value;if(password.length<8){msg('Use pelo menos 8 caracteres.');return}
+    if(busy)return;const password=$('cloudNewPassword').value,err=passwordError(password,$('cloudNewPasswordConfirm').value);if(err){msg(err);return}
     busy=true;render();
-    try{const c=await sessionClient(),{error}=await c.auth.updateUser({password});if(error)throw error;recovery=false;$('cloudNewPassword').value='';msg('Senha atualizada.');location.reload()}
+    try{const c=await sessionClient(),{error}=await c.auth.updateUser({password});if(error)throw error;recovery=false;$('cloudNewPassword').value='';$('cloudNewPasswordConfirm').value='';msg('Senha atualizada.');location.replace(returnUrl())}
     catch(e){msg(String(e?.message||e).slice(0,250))}
     finally{busy=false;render()}
   }
@@ -861,12 +897,15 @@
   }
   function mount(){
     if(setupDone)return;
-    const panel=document.createElement('section');panel.id='cloudPanel';panel.className='panel cloud-panel';
-    panel.innerHTML='<div class="cloud-head"><div><div class="eyebrow">VESTE 4.4 · MINHA CONTA</div><h2>Seu closet, onde estiver.</h2></div><span id="cloudState" class="cloud-state">Modo local</span></div><div id="cloudGuest"><p>Entre na sua conta para organizar suas roupas, criar looks e descobrir seu estilo. Seu closet é privado.</p><div class="cloud-fields"><label>E-mail<input id="cloudEmail" type="email" autocomplete="email" placeholder="seu@email.com"></label><label>Senha<input id="cloudPassword" type="password" autocomplete="current-password" minlength="8" placeholder="Mínimo 8 caracteres"></label></div><div class="v3actions"><button class="btn btn-dark" id="cloudLogin">Entrar</button><button class="btn btn-outline" id="cloudSignup">Criar conta</button><button class="text-button" id="cloudReset">Esqueci a senha</button></div><p class="v3muted">Ao criar sua conta, confirme seu endereço de e-mail.</p></div><div id="cloudSigned" hidden><p id="cloudIdentity"></p><div class="v3actions"><button class="btn btn-dark" id="cloudSync">↻ Sincronizar agora</button><button class="btn btn-outline" id="cloudMigrate">Importar closet local</button><button class="text-button" id="cloudLogout">Sair</button></div><div id="cloudConflict" class="cloud-conflict" hidden><strong>Qual versão deve ser mantida?</strong><p>Exporte um backup antes de substituir qualquer versão. Uma escolha pode descartar alterações do outro dispositivo.</p><div class="v3actions"><button class="btn btn-outline" id="cloudKeepRemote">Usar versão da nuvem</button><button class="btn btn-outline" id="cloudKeepLocal">Enviar versão deste aparelho</button></div></div><p class="v3muted">Fotos privadas e dados separados por conta. Sair bloqueia o acesso ao aplicativo; os dados locais permanecem separados para o próximo login.</p></div><div id="cloudRecovery" hidden><label>Nova senha<input type="password" id="cloudNewPassword" autocomplete="new-password"></label><button class="btn btn-dark" id="cloudChangePassword">Atualizar senha</button></div><div id="cloudBoot" hidden><p id="cloudBootText">Preparando seu guarda-roupa…</p><div class="v3actions"><button class="btn btn-outline" id="cloudRetry">Atualizar página</button><button class="text-button" id="cloudExitBlocked">Sair da conta</button></div></div><p id="cloudMessage" class="cloud-message" aria-live="polite"></p>';
+    const panel=document.createElement('section');panel.id='cloudPanel';panel.className='panel cloud-panel';authScreen=screenFrom(location.search);
+    panel.innerHTML='<div class="cloud-head"><div><div class="eyebrow">VESTE 4.5 · MINHA CONTA</div><h2 id="cloudHeading">Bem-vindo ao VESTE.</h2></div><span id="cloudState" class="cloud-state">Modo local</span></div><div id="cloudGuest"><form class="auth-form" id="cloudLoginForm"><p>Entre para acessar seu guarda-roupa inteligente.</p><label for="cloudEmail">E-mail<input id="cloudEmail" type="email" autocomplete="username" required placeholder="seu@email.com"></label><label for="cloudPassword">Senha<input id="cloudPassword" type="password" autocomplete="current-password" required placeholder="Sua senha"></label><button type="button" class="text-button auth-forgot" id="cloudGoReset">Esqueci minha senha</button><button class="btn btn-dark" type="submit" id="cloudLogin">Entrar</button><div class="auth-new-account"><span>Ainda não tem conta?</span><button type="button" class="btn btn-outline" id="cloudGoSignup">Criar conta</button></div></form><form class="auth-form" id="cloudSignupForm" hidden><button class="text-button auth-back" type="button" id="cloudBackSignup">← Voltar ao login</button><p>Seu closet digital começa aqui.</p><label for="cloudSignupEmail">E-mail<input id="cloudSignupEmail" type="email" autocomplete="email" required placeholder="seu@email.com"></label><label for="cloudSignupPassword">Crie uma senha<input id="cloudSignupPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="No mínimo 8 caracteres"></label><label for="cloudSignupConfirm">Confirme sua senha<input id="cloudSignupConfirm" type="password" autocomplete="new-password" minlength="8" required placeholder="Repita a senha"></label><button class="btn btn-dark" type="submit" id="cloudCreateAccount">Criar minha conta</button><p class="auth-form-note">Você precisará confirmar seu endereço de e-mail para ativar a conta.</p></form><form class="auth-form" id="cloudResetForm" hidden><button class="text-button auth-back" type="button" id="cloudBackReset">← Voltar ao login</button><p>Informe o e-mail utilizado no cadastro para receber as instruções.</p><label for="cloudResetEmail">E-mail<input id="cloudResetEmail" type="email" autocomplete="email" required placeholder="seu@email.com"></label><button class="btn btn-dark" type="submit" id="cloudSendReset">Enviar link de recuperação</button></form><section class="auth-form auth-sent" id="cloudSent" hidden><div class="auth-mail-mark" aria-hidden="true">✉</div><p id="cloudSentText"></p><strong id="cloudSentEmail"></strong><button class="btn btn-dark" type="button" id="cloudBackSent">Voltar ao login</button></section></div><div id="cloudSigned" hidden><p id="cloudIdentity"></p><div class="v3actions"><button class="btn btn-dark" id="cloudSync">↻ Sincronizar agora</button><button class="btn btn-outline" id="cloudMigrate">Importar closet local</button><button class="text-button" id="cloudLogout">Sair</button></div><div id="cloudConflict" class="cloud-conflict" hidden><strong>Qual versão deve ser mantida?</strong><p>Exporte um backup antes de substituir qualquer versão. Uma escolha pode descartar alterações do outro dispositivo.</p><div class="v3actions"><button class="btn btn-outline" id="cloudKeepRemote">Usar versão da nuvem</button><button class="btn btn-outline" id="cloudKeepLocal">Enviar versão deste aparelho</button></div></div><p class="v3muted">Fotos privadas e dados separados por conta. Sair bloqueia o acesso ao aplicativo; os dados locais permanecem separados para o próximo login.</p></div><form class="auth-form" id="cloudRecovery" hidden><p>Defina sua nova senha para voltar ao closet.</p><label for="cloudNewPassword">Nova senha<input type="password" id="cloudNewPassword" autocomplete="new-password" minlength="8" required></label><label for="cloudNewPasswordConfirm">Confirme a nova senha<input type="password" id="cloudNewPasswordConfirm" autocomplete="new-password" minlength="8" required></label><button type="submit" class="btn btn-dark" id="cloudChangePassword">Atualizar senha</button></form><div id="cloudBoot" hidden><p id="cloudBootText">Preparando seu guarda-roupa…</p><div class="v3actions"><button class="btn btn-outline" id="cloudRetry">Atualizar página</button><button class="text-button" id="cloudExitBlocked">Sair da conta</button></div></div><p id="cloudMessage" class="cloud-message" aria-live="polite"></p>';
     $('authMount').replaceChildren(panel);
     $('cloudRetry').onclick=()=>location.reload();$('cloudExitBlocked').onclick=logout;
-    $('cloudPassword').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();authAction('login')}});
-    $('cloudLogin').onclick=()=>authAction('login');$('cloudSignup').onclick=()=>authAction('signup');$('cloudReset').onclick=()=>authAction('reset');$('cloudChangePassword').onclick=changePassword;
+    for(const [id,mode] of [['cloudLoginForm','login'],['cloudSignupForm','signup'],['cloudResetForm','reset']])$(id).addEventListener('submit',e=>{e.preventDefault();authAction(mode)});
+    $('cloudRecovery').addEventListener('submit',e=>{e.preventDefault();changePassword()});
+    $('cloudGoSignup').onclick=()=>goAuth('signup');$('cloudGoReset').onclick=()=>goAuth('reset');
+    for(const id of ['cloudBackSignup','cloudBackReset','cloudBackSent'])$(id).onclick=()=>goAuth('login');
+    window.addEventListener('popstate',()=>{if(user||busy)return;const next=screenFrom(location.search);if(next!==authScreen)goAuth(next,{replace:true})});
     $('cloudSync').onclick=()=>sync(true);$('cloudMigrate').onclick=guestMigration;$('cloudLogout').onclick=logout;
     $('cloudKeepLocal').onclick=()=>{if(confirm('Substituir os dados da nuvem pela versão deste aparelho? Recomendamos exportar um backup primeiro.'))sync(true,'local')};
     $('cloudKeepRemote').onclick=()=>{if(confirm('Substituir o closet deste aparelho pela versão da nuvem? Recomendamos exportar um backup primeiro.'))sync(true,'remote')};
@@ -874,7 +913,7 @@
   }
   function start(){ready=true;if(user&&!hadMeta&&state.pieces.length){meta.dirty=true;try{persist()}catch{}}render();if(user){schedule(100);window.addEventListener('online',()=>schedule(50));window.addEventListener('focus',()=>schedule(500));window.addEventListener('offline',render);setInterval(()=>{if(document.visibilityState==='visible'&&idle())sync(false)},30000);setInterval(()=>{if(ready&&user&&sessionExpiry&&sessionExpiry<=Date.now()/1000&&!navigator.onLine){ready=false;clearTimeout(timer);document.querySelectorAll('dialog[open]').forEach(d=>d.close());bootError='Sua sessão expirou. Conecte-se à internet e atualize a página para entrar novamente.';render()}},15000)}}
   function fail(message){ready=false;bootError=message;render()}
-  return {prepare,mount,start,touch,account:()=>!!user,canEnter:()=>!!user&&!recovery,fail,defaults,classify,validPath};
+  return {prepare,mount,start,touch,account:()=>!!user,canEnter:()=>!!user&&!recovery,fail,defaults,classify,validPath,screenFrom,passwordError,authError};
 }
   function bulkCloset(){
   let rows=[],busy=false,stopped=false,run=0,phase='',message='',comparisonBusy=false;

@@ -100,3 +100,7 @@ Meu estilo → Conectar IA → Lembrar chave neste dispositivo. Configuração e
 ## VESTE 4.4 — revisão inteligente de duplicatas
 
 Cadastro individual e em lote: foto idêntica, assinatura visual local (hash de diferenças horizontais/verticais, histograma de cores, amostragem de pixels, proporção, tentativa de recorte de fundo uniforme) e características cadastradas. Imagens exatas e suspeitas aparecem para revisão com miniaturas; sem exclusão automática. O lote verifica também as fotos anteriores do próprio lote e revalida antes de gravar. O usuário pode manter peças semelhantes. Comparação Gemini opcional, duas fotos por solicitação, com confirmação explícita; depende de chave e pode ter custo. Sem IA, a análise local continua. É possível haver falsos positivos e negativos, especialmente ângulos, peças lisas e fotos vestidas; os rótulos não expressam probabilidade calibrada. Nenhum dado adicional precisa ser salvo na nuvem. Detecta novas inserções (não faz deduplicação retroativa). Testes sintéticos: igualdade, diferenças de categoria/cor, mudança leve de posição/iluminação e metadados. Teste com fotos reais ainda necessário.
+
+## VESTE 4.5 — telas de autenticação separadas
+
+A tela inicial exibe somente login. Criar conta navega para ?auth=cadastro, com e-mail, senha e confirmação; recuperação navega para ?auth=recuperar-senha. Há tela de instruções de e-mail e botão de retorno. Rotas no mesmo app, callback Supabase permanece na URL base. Sem alterações no schema ou políticas de segurança. Validar cadastro e sessão real após deploy.
