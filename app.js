@@ -1,7 +1,7 @@
 (() => {
   'use strict';
-  const DB_NAME = 'veste-closet-v1';
-  const STORAGE_KEY = 'veste-settings-v1';
+  let DB_NAME = 'veste-closet-v1';
+  let STORAGE_KEY = 'veste-settings-v1';
   const GROUPS = {top:'Parte de cima',bottom:'Parte de baixo',layer:'Terceira peça',shoes:'Calçado',accessory:'Acessório',onepiece:'Peça única'};
   const OCCASIONS = {trabalho:'Trabalho',casual:'Dia a dia',evento:'Evento',noite:'Sair à noite',esporte:'Esporte'};
   const SEASONS = {quente:'Quente',ameno:'Ameno',frio:'Frio'};
@@ -28,23 +28,23 @@
     settings:{prefs:['casual','elegante'],loved:[],rejected:[],favorites:[],wearHistory:[],preferAccessories:true,repeatDays:3,avoidPairs:[],weatherCity:'Rio de Janeiro',weekPlan:null,...readLocal()},
     candidates:[],resultsGenerated:false,forecast:null,aiKey:null,aiModel:'gemini-3.6-flash',aiNotes:{},weatherLoading:false
   };
-  const saveLocal = () => {try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state.settings))}catch{notify('Não foi possível salvar as preferências neste navegador.')}};
+  const saveLocal = () => {try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state.settings));cloud.touch()}catch{notify('Não foi possível salvar as preferências neste navegador.')}};
   const escapeHTML = (s='') => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const randomId = () => globalThis.crypto?.randomUUID?.() || `g-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   let toastTimeout;
   function notify(message){ const e=$('toast');e.textContent=message;e.classList.add('show');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>e.classList.remove('show'),3500);}
 
-  function openDatabase(){return new Promise((resolve,reject)=>{
+  function openDatabase(name=DB_NAME){return new Promise((resolve,reject)=>{
     if(!('indexedDB' in window))return reject(new Error('Seu navegador não oferece armazenamento de fotos.'));
-    const r=indexedDB.open(DB_NAME,1);
+    const r=indexedDB.open(name,1);
     r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains('pieces'))r.result.createObjectStore('pieces',{keyPath:'id'})};
     r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);
   })}
   function dbGetAll(){return new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readonly');const r=t.objectStore('pieces').getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
-  function dbPut(piece){return new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite');t.objectStore('pieces').put(piece);t.oncomplete=()=>resolve();t.onerror=()=>reject(t.error)})}
-  function dbDelete(id){return new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite');t.objectStore('pieces').delete(id);t.oncomplete=()=>resolve();t.onerror=()=>reject(t.error)})}
-  function dbReplace(pieces){return new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite');const store=t.objectStore('pieces');store.clear();pieces.forEach(p=>store.put(p));t.oncomplete=()=>resolve();t.onerror=()=>reject(t.error)})}
-  async function refreshPieces(){state.pieces=(await dbGetAll()).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));renderAll()}
+  function dbPut(piece){cloud.touch();return new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite');t.objectStore('pieces').put(piece);t.oncomplete=()=>{cloud.touch();resolve()};t.onerror=()=>reject(t.error)})}
+  function dbDelete(id){cloud.touch();return new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite');t.objectStore('pieces').delete(id);t.oncomplete=()=>{cloud.touch();resolve()};t.onerror=()=>reject(t.error)})}
+  function dbReplace(pieces){cloud.touch();return new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite');const store=t.objectStore('pieces');store.clear();pieces.forEach(p=>store.put(p));t.oncomplete=()=>{cloud.touch();resolve()};t.onerror=()=>reject(t.error)})}
+  async function refreshPieces(){state.pieces=(await dbGetAll()).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));renderAll();cloud.touch()}
   function navigate(route){ if(!['home','closet','looks','week','style'].includes(route))return;state.view=route;document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active',el.id===`view-${route}`));document.querySelectorAll('[data-route]').forEach(el=>el.classList.toggle('active',el.dataset.route===route));$('topbarTitle').textContent={home:'SEU ESPAÇO',closet:'SEU GUARDA-ROUPA',looks:'SEU STYLIST PESSOAL',week:'SEU PLANEJAMENTO',style:'SUAS PREFERÊNCIAS'}[route];if(route==='looks'&&!state.resultsGenerated)generateLooks();if(route==='style'){renderStyle();renderAdvanced()}if(route==='week')renderWeek();window.scrollTo({top:0,behavior:'smooth'})}
   function pieceById(id){return state.pieces.find(p=>p.id===id)}
   function selectedValues(container){return Array.from(container.querySelectorAll('input:checked')).map(x=>x.value)}
@@ -262,7 +262,7 @@
       const raw=await f.text(),existing=await dbGetAll(),{accepted,skipped}=normalizePiecePack(raw,existing);
       if(!accepted.length){notify('Nenhuma peça nova. '+skipped+' possível(is) duplicada(s) ignorada(s).');return}
       if(!confirm('Adicionar '+accepted.length+' peça(s) ao seu closet? '+skipped+' possível(is) duplicada(s) serão ignorada(s). Seus dados atuais serão preservados.'))return;
-      await new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error||new Error('Importação cancelada'));accepted.forEach(p=>store.add(p))});
+      cloud.touch();await new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error||new Error('Importação cancelada'));accepted.forEach(p=>store.add(p))});
       state.resultsGenerated=false;await refreshPieces();notify(accepted.length+' peças adicionadas. Revise as fotos e classificações no closet.');
     }catch(err){notify(err.message||'Não foi possível importar as peças.') }finally{packImportBusy=false}
   }
@@ -355,7 +355,7 @@
     const sig=p=>[p.group,p.color,norm(p.name)].join('|'),known=new Set(existing.map(sig));
     const added=demoPieces().filter(p=>!ids.has(p.id)&&!known.has(sig(p)));
     if(added.length){
-      await new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');t.oncomplete=resolve;t.onabort=()=>reject(t.error);t.onerror=()=>reject(t.error);added.forEach(p=>store.put(p))});
+      cloud.touch();await new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');t.oncomplete=resolve;t.onabort=()=>reject(t.error);t.onerror=()=>reject(t.error);added.forEach(p=>store.put(p))});
     }
     state.settings.demoInitialized=true;saveLocal();state.resultsGenerated=false;
     if(!automatic){await refreshPieces();notify(added.length?added.length+' peça(s) de teste adicionadas.':'O closet de teste já está disponível.')}
@@ -365,7 +365,7 @@
     const all=await dbGetAll(),ids=new Set(all.filter(isDemoPiece).map(p=>p.id));
     if(!ids.size)return;
     if(!confirm('Remover somente as peças ilustradas de teste e os registros de looks que as incluem? Suas roupas reais serão mantidas.'))return;
-    await new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');t.oncomplete=resolve;t.onabort=()=>reject(t.error);t.onerror=()=>reject(t.error);ids.forEach(id=>store.delete(id))});
+    cloud.touch();await new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');t.oncomplete=resolve;t.onabort=()=>reject(t.error);t.onerror=()=>reject(t.error);ids.forEach(id=>store.delete(id))});
     const hasDemo=key=>String(key||'').split('|').some(id=>ids.has(id));
     state.settings.loved=state.settings.loved.filter(k=>!hasDemo(k));state.settings.rejected=state.settings.rejected.filter(k=>!hasDemo(k));state.settings.favorites=state.settings.favorites.filter(f=>!f.ids.some(id=>ids.has(id)));state.settings.wearHistory=state.settings.wearHistory.filter(w=>!hasDemo(w.key));
     if(state.settings.weekPlan?.days?.some(d=>d.ids?.some(id=>ids.has(id))))state.settings.weekPlan=null;
@@ -381,7 +381,7 @@
     document.querySelectorAll('#closetGrid .garment-card').forEach(el=>{const p=pieceById(el.querySelector('[data-edit]')?.dataset.edit);if(isDemoPiece(p))el.querySelector('.garment-info')?.insertAdjacentHTML('afterbegin','<span class="veste-demo-tag">ILUSTRAÇÃO · TESTE</span>')});
   }
 
-  async function init(){makeColorOptions();makeAvoidColors();$('weatherCity').value=state.settings.weatherCity||'Rio de Janeiro';renderAdvanced();createChecks('pieceOccasions',OCCASIONS);createChecks('pieceSeasons',SEASONS);createChecks('pieceStyles',STYLES);setupEvents();try{state.db=await openDatabase();try{await addDemoCloset(true)}catch(err){console.warn('Demo skipped',err)}await refreshPieces()}catch(err){notify('Armazenamento não disponível. Use Safari/Chrome normal fora do modo privado.');document.querySelectorAll('[data-action="add"]').forEach(b=>b.disabled=true);$('generateBtn').disabled=true;console.error(err)}if('serviceWorker' in navigator&&['http:','https:'].includes(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});}
+  async function init(){await cloud.prepare();makeColorOptions();makeAvoidColors();$('weatherCity').value=state.settings.weatherCity||'Rio de Janeiro';renderAdvanced();createChecks('pieceOccasions',OCCASIONS);createChecks('pieceSeasons',SEASONS);createChecks('pieceStyles',STYLES);setupEvents();cloud.mount();try{state.db=await openDatabase();if(!cloud.account())try{await addDemoCloset(true)}catch(err){console.warn('Demo skipped',err)}await refreshPieces();cloud.start()}catch(err){notify('Armazenamento não disponível. Use Safari/Chrome normal fora do modo privado.');document.querySelectorAll('[data-action="add"]').forEach(b=>b.disabled=true);$('generateBtn').disabled=true;console.error(err)}if('serviceWorker' in navigator&&['http:','https:'].includes(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});}
   function atelierV3(){
   const v=()=>{if(!state.settings.v3||typeof state.settings.v3!=='object'||Array.isArray(state.settings.v3))state.settings.v3={};const x=state.settings.v3;if(!x.ratings||typeof x.ratings!=='object'||Array.isArray(x.ratings))x.ratings={};if(!Array.isArray(x.feedback))x.feedback=[];if(!Array.isArray(x.wishes))x.wishes=[];if(x.trip&&(!Array.isArray(x.trip.ids)||!Array.isArray(x.trip.days)||!Array.isArray(x.trip.checked)))x.trip=null;return x};
   const E=escapeHTML;
@@ -620,6 +620,243 @@
   }
   setupV3();
 }
+  function makeCloud(){
+  const config={"url":"https://zodyzmeeossstkiwanqi.supabase.co","key":"sb_publishable_26b9DoYuHezMJ06urxRk9w_qCE_TtlU"};
+  const guestDB='veste-closet-v1',guestSettings='veste-settings-v1',authKey='veste-supabase-auth-v1';
+  const marker='veste-cloud-account-v1';
+  const bucket='veste-photos',table='veste_closets';
+  let client=null, loading=null, user=null, ready=false, busy=false, applying=false, recovery=false, checked=false, epoch=0, timer=null, meta={revision:null,dirty:false,conflict:false}, setupDone=false, hadMeta=false;
+  const kid=()=>user?.id||null;
+  const get=(k)=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch{return null}};
+  const put=(k,v)=>{localStorage.setItem(k,JSON.stringify(v))};
+  const del=k=>{try{localStorage.removeItem(k)}catch{}};
+  const metaKey=()=>`veste-cloud-meta-v1:${kid()}`;
+  function persist(){if(kid())put(metaKey(),meta)}
+  const validUid=id=>typeof id==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  function defaults(input={}){
+    const out={prefs:['casual','elegante'],loved:[],rejected:[],favorites:[],wearHistory:[],preferAccessories:true,repeatDays:3,avoidPairs:[],weatherCity:'Rio de Janeiro',weekPlan:null};
+    const allowed=['prefs','loved','rejected','favorites','wearHistory','preferAccessories','repeatDays','avoidPairs','weatherCity','weekPlan','weekdayOccasion','weekendOccasion','aiAutoAnalyze','v3','demoInitialized'];
+    for(const k of allowed)if(Object.hasOwn(input,k))out[k]=input[k];
+    for(const k of ['prefs','loved','rejected','favorites','wearHistory','avoidPairs'])if(!Array.isArray(out[k]))out[k]=[];
+    if(out.v3&&typeof out.v3!=='object')delete out.v3;
+    return JSON.parse(JSON.stringify(out));
+  }
+  function msg(message){const el=$('cloudMessage');if(el)el.textContent=message}
+  function render(){
+    if(!setupDone)return;
+    $('cloudGuest').hidden=!!user;$('cloudSigned').hidden=!user;$('cloudRecovery').hidden=!recovery;
+    $('cloudIdentity').textContent=user?.email||'Conta VESTE';
+    $('cloudState').textContent=!user?'Modo local':recovery?'Redefina a senha':meta.conflict?'Conflito de versões':busy?'Sincronizando…':meta.dirty?'Alterações locais pendentes':!navigator.onLine?'Sem conexão':checked?'Nuvem conectada':'Verificando nuvem…';
+    $('cloudConflict').hidden=!meta.conflict||!user;
+    for(const id of ['cloudSync','cloudMigrate','cloudKeepLocal','cloudKeepRemote','cloudLogout'])$(id).disabled=busy||recovery;
+  }
+  function useAccount(u){
+    if(!validUid(u?.id))return false;
+    user={id:u.id,email:typeof u.email==='string'?u.email:''};
+    DB_NAME=guestDB+':'+user.id;STORAGE_KEY=guestSettings+':'+user.id;
+    state.settings=defaults(get(STORAGE_KEY)||{});
+    const old=get(metaKey());hadMeta=!!old;
+    meta={revision:Number.isSafeInteger(old?.revision)&&old.revision>0?old.revision:null,dirty:old?.dirty===true,conflict:old?.conflict===true};
+    put(marker,user);return true;
+  }
+  function load(){
+    if(client)return Promise.resolve(client);
+    if(loading)return loading;
+    loading=new Promise((resolve,reject)=>{
+      let node=null,timeout;
+      const finish=()=>{clearTimeout(timeout);if(!globalThis.supabase?.createClient){reject(new Error('Biblioteca de login indisponível.'));return}
+        try{client=globalThis.supabase.createClient(config.url,config.key,{auth:{storageKey:authKey,persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:'implicit'}});
+          client.auth.onAuthStateChange((event,session)=>{
+            if(event==='PASSWORD_RECOVERY'){recovery=true;setTimeout(render,0);return}
+            if(ready&&['SIGNED_OUT','SIGNED_IN','TOKEN_REFRESHED'].includes(event)&&(session?.user?.id||null)!==kid()){
+              ready=false;clearTimeout(timer);const shell=document.querySelector('.app-shell'),nav=document.querySelector('.mobile-nav');if(shell)shell.inert=true;if(nav)nav.inert=true;
+              if(session?.user?.id)try{put(marker,{id:session.user.id,email:session.user.email||''})}catch{}
+              else del(marker);window.location.reload();
+            }
+          });resolve(client);
+        }catch(e){reject(e)}};
+      if(globalThis.supabase?.createClient){finish();return}
+      node=document.createElement('script');node.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0';node.async=true;node.crossOrigin='anonymous';
+      node.onload=finish;node.onerror=()=>{clearTimeout(timeout);node.remove();reject(new Error('Não foi possível carregar o acesso à nuvem.'))};
+      timeout=setTimeout(()=>{node.remove();reject(new Error('Conexão com o login demorou demais.'))},8000);document.head.appendChild(node);
+    }).finally(()=>loading=null);
+    return loading;
+  }
+  async function prepare(){
+    const prior=get(marker),cached=get(authKey);
+    const callback=/(access_token|refresh_token|error_description|code)=|type=recovery/.test(location.hash+location.search);
+    if(/(?:^|[&#?])type=recovery(?:&|$)/.test(location.hash+location.search))recovery=true;
+    if(!prior&&!cached&&!callback)return;
+    try{
+      const c=await load();const {data,error}=await c.auth.getSession();if(error)throw error;
+      if(data.session?.user){useAccount(data.session.user);return}
+      del(marker);recovery=false;
+    }catch(e){
+      // Cached account data may be used only as a local offline cache; no cloud authorization is inferred.
+      if(navigator.onLine===false&&validUid(prior?.id)&&cached?.user?.id===prior.id&&cached?.access_token){useAccount(prior);return}
+      del(marker);recovery=false;
+    }
+  }
+  function touch(){
+    if(!ready||!user||applying)return;
+    epoch++;meta.dirty=true;
+    try{persist()}catch{msg('Não foi possível gravar a fila local. Exporte um backup.')}
+    render();schedule();
+  }
+  function schedule(wait=1300){
+    if(!ready||!user||recovery||meta.conflict)return;
+    clearTimeout(timer);timer=setTimeout(()=>sync(false),wait);
+  }
+  function idle(){return !document.querySelector('dialog[open]')}
+  async function sessionClient(){
+    const c=await load(),{data,error}=await c.auth.getSession();
+    if(error)throw error;
+    if(!user||data.session?.user?.id!==kid())throw new Error('Sessão expirada ou conta alterada. Entre novamente antes de sincronizar.');
+    return c;
+  }
+  function blobOf(data){
+    const m=String(data||'').match(/^data:(image\/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/);
+    if(!m)throw new Error('Há uma imagem inválida no closet. Revise a peça.');
+    const bytes=Uint8Array.from(atob(m[2]),c=>c.charCodeAt(0));
+    if(bytes.byteLength>8388608)throw new Error('Uma foto ultrapassa 8 MB. Substitua por uma foto menor.');
+    return new Blob([bytes],{type:m[1]});
+  }
+  async function photoPath(data,uid){const blob=blobOf(data),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))).map(n=>n.toString(16).padStart(2,'0')).join('');return {path:uid+'/'+hash+'.'+({ 'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif'}[blob.type]),blob}}
+  function validPath(path,uid){return typeof path==='string'&&path.startsWith(uid+'/')&&/^[0-9a-f]{64}\.(jpg|png|webp|gif)$/.test(path.slice(uid.length+1))}
+  function asData(blob){return new Promise((resolve,reject)=>{const f=new FileReader();f.onload=()=>resolve(f.result);f.onerror=()=>reject(new Error('Não consegui ler uma foto da nuvem.'));f.readAsDataURL(blob)})}
+  const fields=['id','name','group','color','pattern','fit','formality','occasions','seasons','styles','available','createdAt','useCount','lastWorn','subtype','fabric','lengthType','neckline','coverage','price','source','demo'];
+  function manifest(p){const out={};for(const k of fields)if(Object.hasOwn(p,k))out[k]=p[k];return out}
+  function validPiece(p){return p&&typeof p.id==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(p.id)&&typeof p.name==='string'&&Object.hasOwn(GROUPS,p.group)}
+  function baseRevision(row){return row?Number(row.revision):null}
+  function classify(local,remote,dirty,force){
+    if(force==='remote')return 'pull';if(force==='local')return 'push';
+    if(local!==remote){if(dirty||remote===null)return 'conflict';return 'pull'}
+    return dirty?'push':'noop';
+  }
+  async function getRemote(c,uid){const {data,error}=await c.from(table).select('revision,pieces,settings,updated_at').eq('user_id',uid).maybeSingle();if(error)throw error;if(data&&!Number.isSafeInteger(Number(data.revision)))throw new Error('Revisão da nuvem inválida.');return data}
+  async function uploadManifest(c,uid,pieces,row){
+    const existing=new Set((row?.pieces||[]).map(p=>p.photo_path)),out=[];
+    for(const p of pieces){
+      if(!validPiece(p))throw new Error('Há uma peça com cadastro inválido.');
+      const {path,blob}=await photoPath(p.image,uid);
+      if(!existing.has(path)){
+        const {error}=await c.storage.from(bucket).upload(path,blob,{contentType:blob.type,upsert:false,cacheControl:'3600'});
+        if(error){if(!/already exists|duplicate|resource.*exist/i.test(error.message||'')&&String(error.statusCode||error.status)!=='409')throw error;
+          const check=await c.storage.from(bucket).exists(path);if(check.error||!check.data)throw error;}
+        existing.add(path);
+      }
+      out.push({...manifest(p),photo_path:path});
+    }return out;
+  }
+  async function pullPieces(c,uid,row){
+    if(!row)return [];
+    if(!Array.isArray(row.pieces)||row.pieces.length>2000)throw new Error('Lista de peças da nuvem inválida.');
+    const local=new Map((await dbGetAll()).map(p=>[p.id,p]));const remote=[],ids=new Set();
+    for(const p of row.pieces){
+      if(!validPiece(p)||ids.has(p.id)||!validPath(p.photo_path,uid))throw new Error('Uma peça da nuvem não passou na validação.');
+      ids.add(p.id);let image=null;const previous=local.get(p.id);
+      if(previous?.image)try{if((await photoPath(previous.image,uid)).path===p.photo_path)image=previous.image}catch{}
+      if(!image){const {data,error}=await c.storage.from(bucket).download(p.photo_path);if(error||!data)throw error||new Error('Foto indisponível na nuvem.');image=await asData(data);if((await photoPath(image,uid)).path!==p.photo_path)throw new Error('Foto da nuvem não corresponde ao arquivo esperado.')}
+      remote.push({...manifest(p),image});
+    }return remote;
+  }
+  async function sync(manual=false,force=null){
+    if(!ready||!user||busy||recovery||!navigator.onLine||!idle()){if(manual)msg('Conecte-se à internet e feche a edição de peças para sincronizar.');return}
+    if(meta.conflict&&!force){render();return}
+    busy=true;render();const uid=kid(),start=epoch;
+    try{
+      const c=await sessionClient(),row=await getRemote(c,uid),rev=baseRevision(row);checked=true;
+      let action=classify(meta.revision,rev,meta.dirty,force);
+      // A lost local cache is not an instruction to erase remote data.
+      if(action==='noop'&&row){const localIds=(await dbGetAll()).map(p=>p.id).sort().join('|'),remoteIds=(row.pieces||[]).map(p=>p.id).sort().join('|');if(localIds!==remoteIds)action='pull'}
+      if(action==='conflict'){
+        meta.conflict=true;persist();msg('Há mudanças diferentes na nuvem e neste dispositivo. Escolha qual versão manter; nenhuma foi sobrescrita.');return;
+      }
+      if(action==='noop'){msg(row?'Tudo sincronizado.':'Conta conectada. Adicione peças ou importe o closet local.');return}
+      if(action==='pull'){
+        const pcs=await pullPieces(c,uid,row);
+        if(!ready||epoch!==start||!idle()||kid()!==uid){msg('O closet mudou durante a consulta. Tente novamente.');return}
+        applying=true;const shell=document.querySelector('.app-shell'),nav=document.querySelector('.mobile-nav');if(shell)shell.inert=true;if(nav)nav.inert=true;
+        try{
+          await dbReplace(pcs);state.settings=defaults(row?.settings||{});saveLocal();state.candidates=[];state.resultsGenerated=false;await refreshPieces();meta={revision:rev,dirty:false,conflict:false};persist();
+        }finally{applying=false;if(shell)shell.inert=false;if(nav)nav.inert=false}
+        msg('Versão da nuvem carregada: '+pcs.length+' peças.');return;
+      }
+      const pcs=await dbGetAll(),settings=defaults(state.settings);
+      if(pcs.length>2000)throw new Error('Limite de 2.000 peças por closet.');
+      const items=await uploadManifest(c,uid,pcs,row);
+      if(!ready||kid()!==uid)throw new Error('Sessão alterada durante a sincronização.');
+      const payload={pieces:items,settings,revision:(rev||0)+1,updated_at:new Date().toISOString()};
+      const response=rev===null?await c.from(table).insert({...payload,user_id:uid}).select('revision').single():await c.from(table).update(payload).eq('user_id',uid).eq('revision',rev).select('revision').maybeSingle();
+      if((response.error&&response.error.code==='23505')||(!response.error&&!response.data)){meta.conflict=true;persist();msg('Outro dispositivo sincronizou primeiro. Nenhuma versão foi sobrescrita.');return}
+      if(response.error)throw response.error;
+      meta={revision:Number(response.data.revision),dirty:epoch!==start,conflict:false};persist();msg('Sincronizado: '+items.length+' peças, preferências e histórico.');
+    }catch(e){msg('Sincronização pendente: '+String(e?.message||e).slice(0,250)+'. Seus dados locais foram mantidos.')}
+    finally{busy=false;render();if(meta.dirty&&!meta.conflict&&epoch!==start)schedule(1600)}
+  }
+  async function guestMigration(){
+    if(!user||busy||recovery||!idle())return;
+    busy=true;render();let db=null;
+    try{
+      db=await openDatabase(guestDB);
+      const pieces=await new Promise((resolve,reject)=>{const req=db.transaction('pieces','readonly').objectStore('pieces').getAll();req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)});
+      const current=await dbGetAll(),ids=new Set(current.map(p=>p.id)),images=new Set(current.map(p=>p.image)),added=[];
+      for(const p of pieces){if(!validPiece(p)||images.has(p.image))continue;const next={...p};if(ids.has(p.id)){if(isDemoPiece(p)&&current.some(q=>q.id===p.id&&isDemoPiece(q)))continue;next.id=randomId()}ids.add(next.id);images.add(next.image);added.push(next)}
+      if(!added.length){msg('Não há peças locais novas para importar.');return}
+      const copyPrefs=current.length===0&&meta.revision===null;
+      if(!confirm('Copiar '+added.length+' peça(s) do modo local para esta conta? '+(copyPrefs?'Preferências locais também serão copiadas. ':'As preferências atuais serão mantidas. ')+'O closet original permanecerá no navegador.'))return;
+      touch();await new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error);added.forEach(p=>store.add(p))});
+      if(copyPrefs)state.settings=defaults(get(guestSettings)||{});
+      saveLocal();state.resultsGenerated=false;await refreshPieces();touch();msg('Closet copiado. Aguarde a sincronização.');
+    }catch(e){msg('Importação não concluída: '+String(e?.message||e).slice(0,200))}
+    finally{db?.close();busy=false;render();schedule(100)}
+  }
+  function returnUrl(){return location.origin+location.pathname}
+  async function authAction(mode){
+    if(busy)return;busy=true;render();
+    const email=$('cloudEmail').value.trim(),password=$('cloudPassword').value;
+    for(const id of ['cloudLogin','cloudSignup','cloudReset'])$(id).disabled=true;
+    try{
+      if(!email||!$('cloudEmail').checkValidity())throw new Error('Informe um e-mail válido.');
+      if(mode!=='reset'&&password.length<8)throw new Error('Use uma senha com pelo menos 8 caracteres.');
+      const c=await load();
+      if(mode==='reset'){const {error}=await c.auth.resetPasswordForEmail(email,{redirectTo:returnUrl()});if(error)throw error;msg('Se a conta existir, verifique seu e-mail para redefinir a senha.');return}
+      const r=mode==='signup'?await c.auth.signUp({email,password,options:{emailRedirectTo:returnUrl()}}):await c.auth.signInWithPassword({email,password});if(r.error)throw r.error;
+      if(r.data.session?.user){put(marker,{id:r.data.session.user.id,email:r.data.session.user.email||email});location.reload();return}
+      msg('Cadastro solicitado. Confirme seu e-mail e depois entre no VESTE.');
+    }catch(e){msg(String(e?.message||e).slice(0,250))}
+    finally{$('cloudPassword').value='';busy=false;for(const id of ['cloudLogin','cloudSignup','cloudReset'])$(id).disabled=false;render()}
+  }
+  async function changePassword(){
+    if(busy)return;const password=$('cloudNewPassword').value;if(password.length<8){msg('Use pelo menos 8 caracteres.');return}
+    busy=true;render();
+    try{const c=await sessionClient(),{error}=await c.auth.updateUser({password});if(error)throw error;recovery=false;$('cloudNewPassword').value='';msg('Senha atualizada.');schedule(50)}
+    catch(e){msg(String(e?.message||e).slice(0,250))}
+    finally{busy=false;render()}
+  }
+  async function logout(){
+    if(busy)return;
+    if(!confirm(meta.dirty?'Há alterações ainda não sincronizadas. Sair e manter as alterações no cache desta conta?':'Sair desta conta? O cache separado permanecerá neste navegador.'))return;
+    busy=true;render();clearTimeout(timer);
+    try{if(client){const {error}=await client.auth.signOut({scope:'local'});if(error)throw error}}
+    catch{msg('Sessão local encerrada; não foi possível revogar a sessão no servidor.')}
+    finally{del(authKey);del(marker);location.reload()}
+  }
+  function mount(){
+    if(setupDone)return;
+    const panel=document.createElement('section');panel.id='cloudPanel';panel.className='panel cloud-panel';
+    panel.innerHTML='<div class="cloud-head"><div><div class="eyebrow">VESTE 4.0 · MINHA CONTA</div><h2>Seu closet, onde estiver.</h2></div><span id="cloudState" class="cloud-state">Modo local</span></div><div id="cloudGuest"><p>Entre para sincronizar suas peças, fotos, calendário e estilo. Você também pode continuar no modo local.</p><div class="cloud-fields"><label>E-mail<input id="cloudEmail" type="email" autocomplete="email" placeholder="seu@email.com"></label><label>Senha<input id="cloudPassword" type="password" autocomplete="current-password" minlength="8" placeholder="Mínimo 8 caracteres"></label></div><div class="v3actions"><button class="btn btn-dark" id="cloudLogin">Entrar</button><button class="btn btn-outline" id="cloudSignup">Criar conta</button><button class="text-button" id="cloudReset">Esqueci a senha</button></div><p class="v3muted">O Google será disponibilizado após configuração do provedor. A confirmação de cadastro e a recuperação dependem da configuração de e-mail e do endereço de retorno do Supabase.</p></div><div id="cloudSigned" hidden><p id="cloudIdentity"></p><div class="v3actions"><button class="btn btn-dark" id="cloudSync">↻ Sincronizar agora</button><button class="btn btn-outline" id="cloudMigrate">Importar closet local</button><button class="text-button" id="cloudLogout">Sair</button></div><div id="cloudConflict" class="cloud-conflict" hidden><strong>Qual versão deve ser mantida?</strong><p>Exporte um backup antes de substituir qualquer versão. Uma escolha pode descartar alterações do outro dispositivo.</p><div class="v3actions"><button class="btn btn-outline" id="cloudKeepRemote">Usar versão da nuvem</button><button class="btn btn-outline" id="cloudKeepLocal">Enviar versão deste aparelho</button></div></div><p class="v3muted">Fotos privadas e dados separados por conta. O cache continua no dispositivo para uso local; sair não apaga o cache. Em aparelho compartilhado, evite guardar dados pessoais no modo local.</p></div><div id="cloudRecovery" hidden><label>Nova senha<input type="password" id="cloudNewPassword" autocomplete="new-password"></label><button class="btn btn-dark" id="cloudChangePassword">Atualizar senha</button></div><p id="cloudMessage" class="cloud-message" aria-live="polite"></p>';
+    $('todayPanel').insertAdjacentElement('beforebegin',panel);
+    $('cloudLogin').onclick=()=>authAction('login');$('cloudSignup').onclick=()=>authAction('signup');$('cloudReset').onclick=()=>authAction('reset');$('cloudChangePassword').onclick=changePassword;
+    $('cloudSync').onclick=()=>sync(true);$('cloudMigrate').onclick=guestMigration;$('cloudLogout').onclick=logout;
+    $('cloudKeepLocal').onclick=()=>{if(confirm('Substituir os dados da nuvem pela versão deste aparelho? Recomendamos exportar um backup primeiro.'))sync(true,'local')};
+    $('cloudKeepRemote').onclick=()=>{if(confirm('Substituir o closet deste aparelho pela versão da nuvem? Recomendamos exportar um backup primeiro.'))sync(true,'remote')};
+    setupDone=true;render();
+  }
+  function start(){ready=true;if(user&&!hadMeta&&state.pieces.length){meta.dirty=true;try{persist()}catch{}}render();if(user){schedule(100);window.addEventListener('online',()=>schedule(50));window.addEventListener('focus',()=>schedule(500));window.addEventListener('offline',render);setInterval(()=>{if(document.visibilityState==='visible'&&idle())sync(false)},30000)}}
+  return {prepare,mount,start,touch,account:()=>!!user,defaults,classify,validPath};
+}
+  const cloud=makeCloud();
   atelierV3();
   init();
 })();
