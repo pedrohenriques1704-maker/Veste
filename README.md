@@ -108,3 +108,7 @@ A tela inicial exibe somente login. Criar conta navega para ?auth=cadastro, com 
 ## VESTE 4.6 — revisão de lotes grandes
 
 Corrige a altura das linhas da galeria, define rolagem interna e paginação de 8 cartões, com filtro de duplicidade e incompletas. A seleção permanece no lote inteiro. Teste sintético de paginação com 44 fotos. Validar Safari após deploy.
+
+## VESTE 4.7 — mensagens do provador e prévia local
+
+Trata cota gratuita zerada, demais limites, permissões e modelos indisponíveis do Gemini. A prévia gratuita mostra fotos existentes lado a lado no dispositivo, sem geração realista nem envio externo. Nenhum faturamento ativado ou fallback pago automático. Teste de geração real depende de acesso e cota do projeto Gemini.
