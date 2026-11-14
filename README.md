@@ -104,3 +104,7 @@ Cadastro individual e em lote: foto idêntica, assinatura visual local (hash de 
 ## VESTE 4.5 — telas de autenticação separadas
 
 A tela inicial exibe somente login. Criar conta navega para ?auth=cadastro, com e-mail, senha e confirmação; recuperação navega para ?auth=recuperar-senha. Há tela de instruções de e-mail e botão de retorno. Rotas no mesmo app, callback Supabase permanece na URL base. Sem alterações no schema ou políticas de segurança. Validar cadastro e sessão real após deploy.
+
+## VESTE 4.6 — revisão de lotes grandes
+
+Corrige a altura das linhas da galeria, define rolagem interna e paginação de 8 cartões, com filtro de duplicidade e incompletas. A seleção permanece no lote inteiro. Teste sintético de paginação com 44 fotos. Validar Safari após deploy.

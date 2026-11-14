@@ -29,3 +29,16 @@
 
 /* VESTE 4.5 — independent authentication screens */
 .auth-access .auth-form{display:grid;gap:14px;margin-top:12px}.auth-access .auth-form[hidden]{display:none!important}.auth-form>p{margin:0;color:#756557;font-size:13px}.auth-form label{display:flex;gap:7px;font-size:12px}.auth-form input{font-size:16px;min-height:44px;padding:10px 12px;border:1px solid #d8c9bb;border-radius:8px;background:#fffdf9;color:#382d26}.auth-form>.btn{min-height:44px}.auth-form .auth-forgot{justify-self:end;font-size:12px;margin-top:-7px;text-decoration:underline;text-underline-offset:3px}.auth-new-account{border-top:1px solid #e8ded4;display:grid;gap:10px;justify-items:center;padding-top:18px;margin-top:4px}.auth-new-account span{font-size:12px;color:#76675a}.auth-form .auth-back{justify-self:start;font-size:12px;color:#825740}.auth-form .auth-form-note{text-align:center;font-size:11px;line-height:1.5}.auth-sent{text-align:center}.auth-mail-mark{font-size:28px;display:grid;place-items:center;margin:auto;border-radius:50%;background:#eee4d9;color:#825740;width:54px;height:54px}.auth-sent strong{overflow-wrap:anywhere;font-size:13px;color:#825740}.auth-form button:disabled{opacity:.6;cursor:wait}.auth-access #cloudMessage{margin:12px 0 0;line-height:1.5}
+
+/* VESTE 4.6 — large batch layout */
+.bulk-dialog[open]{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.bulk-grid{flex:1 1 0;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;display:grid;grid-auto-rows:max-content;align-items:start;align-content:start;overscroll-behavior-y:contain}
+.bulk-card{min-height:max-content;height:auto;align-self:start;display:flex;flex-direction:column}
+.bulk-card-body,.bulk-photo,.bulk-card-head{flex-shrink:0}
+.bulk-page-tools{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px;padding:8px 16px;background:#f5eee6;border-bottom:1px solid #e4dbcf;flex-shrink:0}
+.bulk-page-tools select{min-width:0;max-width:100%;border:1px solid #d9cbbd;border-radius:7px;background:#fffdf9;padding:5px;color:#342b25;font-size:14px}
+.bulk-pagination{display:flex;gap:6px;align-items:center;font-size:12px;color:#6c5a4d}
+.bulk-pagination .btn{min-width:34px;min-height:32px;padding:4px 8px}
+.bulk-empty{grid-column:1/-1;padding:24px;text-align:center;color:#756557}
+.bulk-footer{padding-bottom:max(10px,env(safe-area-inset-bottom))}
+@media(max-width:600px){.bulk-dialog[open]{height:100vh;height:100dvh;max-height:100dvh;margin:0}.bulk-header{padding-top:max(8px,env(safe-area-inset-top))}.bulk-grid{grid-template-columns:1fr;grid-auto-rows:max-content;padding:10px}.bulk-photo{height:200px}.bulk-card-body{padding:12px}.bulk-2{grid-template-columns:1fr 1fr}.bulk-toolbar{max-height:26dvh;overflow-y:auto}.bulk-page-tools{padding:6px 10px}.bulk-page-tools select{font-size:16px}.bulk-footer .btn{font-size:12px}}
