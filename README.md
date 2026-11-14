@@ -70,3 +70,7 @@ Abra `http://localhost:8080`. Todos os arquivos do app precisam ficar na mesma p
 - Ateliê: teste visual com ilustrações, consultora local por palavras-chave ou Gemini, calendário de uso, custo por uso, disponibilidade/lavanderia, compras em avaliação e checklist de mala.
 - Provador com foto selecionada na sessão e Gemini de imagem opcional (modelo configurável). A simulação não mede tamanho nem garante caimento. Consultoria por foto, orientação de cores e provador exigem chave e confirmação de envio ao Google; podem gerar custos. Nenhuma chave vai ao repositório. A conversa e fotos pessoais do ateliê ficam apenas na memória da sessão.
 - Login, sincronização e nuvem continuam fora desta versão. Faça backup antes de atualizar. O motor usa uma busca limitada e heurística; não garante a melhor combinação global.
+
+### Importar peças sem substituir o closet
+
+Na aba Closet, escolha **Importar peças (.json)**. Aceita um pacote `veste-pieces` ou um backup VESTE. Somente peças novas são adicionadas; não importa configurações nem histórico e ignora ID, foto ou nome/categoria/cor duplicados. Nenhuma foto pessoal está incluída no repositório. As peças importadas ficam no IndexedDB local.

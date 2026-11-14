@@ -232,7 +232,44 @@
       state.candidates=result.order.map(i=>previous[i]);state.aiNotes={};for(const item of Array.isArray(result.comments)?result.comments:[]){if(Number.isInteger(item.index)&&previous[item.index]&&typeof item.comment==='string')state.aiNotes[previous[item.index].key]=item.comment.slice(0,120)}renderLooks();$('aiLookAdvice').textContent='✳ '+String(result.tip||'Looks reordenados pela IA.').slice(0,200);notify('Looks reordenados com a análise da IA.');
     }catch(err){$('aiLookAdvice').textContent=err.message;notify(err.message)}finally{btn.disabled=false;btn.textContent='✳ Analisar looks com IA'}}
 
-  function setupEvents(){document.addEventListener('click',e=>{
+
+  // Import a private clothing pack, without replacing wardrobe, feedback or preferences.
+  function normalizePiecePack(raw, existing) {
+    const data=JSON.parse(raw);
+    if(!['veste-pieces','veste'].includes(data.app)||!Array.isArray(data.pieces)||data.pieces.length>500)throw new Error('Arquivo de peças inválido (máximo 500 peças).');
+    const ids=new Set(existing.map(p=>p.id)),images=new Set(existing.map(p=>p.image));
+    const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/\s+/g,' ');
+    const sig=p=>[p.group,p.color,norm(p.name)].join('|');
+    const known=new Set(existing.map(sig)),accepted=[];let skipped=0;
+    const enums=(val,set)=>Array.isArray(val)?[...new Set(val.filter(k=>typeof k==='string'&&Object.prototype.hasOwnProperty.call(set,k)))]:[];
+    const short=(s,n=65)=>typeof s==='string'?s.trim().slice(0,n):'';
+    for(const p of data.pieces){
+      if(!p||typeof p.id!=='string'||!/^[a-zA-Z0-9_-]{1,100}$/.test(p.id)||typeof p.name!=='string'||!p.name.trim()||!Object.prototype.hasOwnProperty.call(GROUPS,p.group)||typeof p.image!=='string'||p.image.length>9000000||!/^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(p.image))throw new Error('Há uma peça inválida no arquivo. Nenhuma foi importada.');
+      const item={id:p.id,name:short(p.name,70),group:p.group,color:Object.prototype.hasOwnProperty.call(COLORS,p.color)?p.color:'',pattern:['liso','listrado','xadrez','floral','estampado','outro'].includes(p.pattern)?p.pattern:'',fit:['justo','regular','amplo'].includes(p.fit)?p.fit:'',formality:[1,2,3,4,5].includes(Number(p.formality))?Number(p.formality):null,occasions:enums(p.occasions,OCCASIONS),seasons:enums(p.seasons,SEASONS),styles:enums(p.styles,STYLES),available:p.available!==false,image:p.image,createdAt:new Date().toISOString(),useCount:0,lastWorn:null,subtype:short(p.subtype),fabric:short(p.fabric),lengthType:short(p.lengthType),neckline:short(p.neckline),coverage:['normal','cropped'].includes(p.coverage)?p.coverage:'',price:Number.isFinite(Number(p.price))?Math.max(0,Number(p.price)):0,source:short(p.source,200)};
+      if(ids.has(item.id)||images.has(item.image)||known.has(sig(item))){skipped++;continue}
+      ids.add(item.id);images.add(item.image);known.add(sig(item));accepted.push(item);
+    }
+    return {accepted,skipped};
+  }
+  let packImportBusy=false;
+  async function importPiecePack(e){
+    const f=e.target.files?.[0];e.target.value='';if(!f||packImportBusy)return;
+    packImportBusy=true;
+    try{
+      if(!state.db)throw new Error('O closet ainda está carregando.');
+      if(f.size>60*1024*1024)throw new Error('Arquivo muito grande. Limite de 60 MB.');
+      const raw=await f.text(),existing=await dbGetAll(),{accepted,skipped}=normalizePiecePack(raw,existing);
+      if(!accepted.length){notify('Nenhuma peça nova. '+skipped+' possível(is) duplicada(s) ignorada(s).');return}
+      if(!confirm('Adicionar '+accepted.length+' peça(s) ao seu closet? '+skipped+' possível(is) duplicada(s) serão ignorada(s). Seus dados atuais serão preservados.'))return;
+      await new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');t.oncomplete=resolve;t.onerror=()=>reject(t.error);t.onabort=()=>reject(t.error||new Error('Importação cancelada'));accepted.forEach(p=>store.add(p))});
+      state.resultsGenerated=false;await refreshPieces();notify(accepted.length+' peças adicionadas. Revise as fotos e classificações no closet.');
+    }catch(err){notify(err.message||'Não foi possível importar as peças.') }finally{packImportBusy=false}
+  }
+
+  function setupEvents(){
+    const bulk=$('v3bulk');
+    if(bulk){const label=document.createElement('label');label.className='btn btn-outline v3file';label.append('↓ Importar peças (.json)');const input=document.createElement('input');input.type='file';input.accept='application/json,.json';input.hidden=true;input.id='v3importPiecePack';label.append(input);bulk.closest('label').insertAdjacentElement('afterend',label);input.addEventListener('change',importPiecePack);}
+    document.addEventListener('click',e=>{
     const route=e.target.closest('[data-route]');if(route){navigate(route.dataset.route);return}
     const add=e.target.closest('[data-action="add"]');if(add){openPieceDialog();return}
     const edit=e.target.closest('[data-edit]');if(edit){openPieceDialog(pieceById(edit.dataset.edit));return}
