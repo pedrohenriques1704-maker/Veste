@@ -381,7 +381,12 @@
     document.querySelectorAll('#closetGrid .garment-card').forEach(el=>{const p=pieceById(el.querySelector('[data-edit]')?.dataset.edit);if(isDemoPiece(p))el.querySelector('.garment-info')?.insertAdjacentHTML('afterbegin','<span class="veste-demo-tag">ILUSTRAÇÃO · TESTE</span>')});
   }
 
-  async function init(){await cloud.prepare();makeColorOptions();makeAvoidColors();$('weatherCity').value=state.settings.weatherCity||'Rio de Janeiro';renderAdvanced();createChecks('pieceOccasions',OCCASIONS);createChecks('pieceSeasons',SEASONS);createChecks('pieceStyles',STYLES);setupEvents();cloud.mount();try{state.db=await openDatabase();if(!cloud.account())try{await addDemoCloset(true)}catch(err){console.warn('Demo skipped',err)}await refreshPieces();cloud.start()}catch(err){notify('Armazenamento não disponível. Use Safari/Chrome normal fora do modo privado.');document.querySelectorAll('[data-action="add"]').forEach(b=>b.disabled=true);$('generateBtn').disabled=true;console.error(err)}if('serviceWorker' in navigator&&['http:','https:'].includes(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});}
+  async function init(){
+    await cloud.prepare();cloud.mount();
+    if('serviceWorker' in navigator&&['http:','https:'].includes(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    if(!cloud.canEnter())return;
+    try{atelierV3();makeColorOptions();makeAvoidColors();$('weatherCity').value=state.settings.weatherCity||'Rio de Janeiro';renderAdvanced();createChecks('pieceOccasions',OCCASIONS);createChecks('pieceSeasons',SEASONS);createChecks('pieceStyles',STYLES);setupEvents();state.db=await openDatabase();await refreshPieces();cloud.start()}catch(err){cloud.fail('Não foi possível iniciar o closet. Tente atualizar a página ou usar outro navegador. Seus dados não foram apagados.');console.error(err)}
+  }
   function atelierV3(){
   const v=()=>{if(!state.settings.v3||typeof state.settings.v3!=='object'||Array.isArray(state.settings.v3))state.settings.v3={};const x=state.settings.v3;if(!x.ratings||typeof x.ratings!=='object'||Array.isArray(x.ratings))x.ratings={};if(!Array.isArray(x.feedback))x.feedback=[];if(!Array.isArray(x.wishes))x.wishes=[];if(x.trip&&(!Array.isArray(x.trip.ids)||!Array.isArray(x.trip.days)||!Array.isArray(x.trip.checked)))x.trip=null;return x};
   const E=escapeHTML;
@@ -625,7 +630,7 @@
   const guestDB='veste-closet-v1',guestSettings='veste-settings-v1',authKey='veste-supabase-auth-v1';
   const marker='veste-cloud-account-v1';
   const bucket='veste-photos',table='veste_closets';
-  let client=null, loading=null, user=null, ready=false, busy=false, applying=false, recovery=false, checked=false, epoch=0, timer=null, meta={revision:null,dirty:false,conflict:false}, setupDone=false, hadMeta=false;
+  let client=null, loading=null, user=null, ready=false, busy=false, applying=false, recovery=false, checked=false, epoch=0, timer=null, meta={revision:null,dirty:false,conflict:false}, setupDone=false, hadMeta=false, sessionExpiry=0, bootError='';
   const kid=()=>user?.id||null;
   const get=(k)=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch{return null}};
   const put=(k,v)=>{localStorage.setItem(k,JSON.stringify(v))};
@@ -644,9 +649,15 @@
   function msg(message){const el=$('cloudMessage');if(el)el.textContent=message}
   function render(){
     if(!setupDone)return;
-    $('cloudGuest').hidden=!!user;$('cloudSigned').hidden=!user;$('cloudRecovery').hidden=!recovery;
+    const locked=!ready||!user||recovery;
+    document.documentElement.classList.toggle('auth-locked',locked);
+    const gate=$('authLanding'),panel=$('cloudPanel');gate.hidden=!locked;
+    if(locked){if(panel.parentElement!==$('authMount'))$('authMount').appendChild(panel)}else if(panel.parentElement===$('authMount'))$('todayPanel').insertAdjacentElement('beforebegin',panel);
+    $('cloudGuest').hidden=!!user;$('cloudSigned').hidden=!user||locked;$('cloudRecovery').hidden=!recovery||!user;$('cloudBoot').hidden=!user||!locked||recovery;
+    $('cloudBootText').textContent=bootError||'Preparando seu guarda-roupa…';
+    $('cloudState').textContent='';
     $('cloudIdentity').textContent=user?.email||'Conta VESTE';
-    $('cloudState').textContent=!user?'Modo local':recovery?'Redefina a senha':meta.conflict?'Conflito de versões':busy?'Sincronizando…':meta.dirty?'Alterações locais pendentes':!navigator.onLine?'Sem conexão':checked?'Nuvem conectada':'Verificando nuvem…';
+    $('cloudState').textContent=!user?'Acesso seguro':recovery?'Redefina a senha':meta.conflict?'Conflito de versões':busy?'Sincronizando…':meta.dirty?'Alterações locais pendentes':!navigator.onLine?'Sem conexão':checked?'Nuvem conectada':'Verificando nuvem…';
     $('cloudConflict').hidden=!meta.conflict||!user;
     for(const id of ['cloudSync','cloudMigrate','cloudKeepLocal','cloudKeepRemote','cloudLogout'])$(id).disabled=busy||recovery;
   }
@@ -667,9 +678,10 @@
       const finish=()=>{clearTimeout(timeout);if(!globalThis.supabase?.createClient){reject(new Error('Biblioteca de login indisponível.'));return}
         try{client=globalThis.supabase.createClient(config.url,config.key,{auth:{storageKey:authKey,persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:'implicit'}});
           client.auth.onAuthStateChange((event,session)=>{
+            if(session?.expires_at)sessionExpiry=Number(session.expires_at)||0;
             if(event==='PASSWORD_RECOVERY'){recovery=true;setTimeout(render,0);return}
             if(ready&&['SIGNED_OUT','SIGNED_IN','TOKEN_REFRESHED'].includes(event)&&(session?.user?.id||null)!==kid()){
-              ready=false;clearTimeout(timer);const shell=document.querySelector('.app-shell'),nav=document.querySelector('.mobile-nav');if(shell)shell.inert=true;if(nav)nav.inert=true;
+              ready=false;clearTimeout(timer);render();const shell=document.querySelector('.app-shell'),nav=document.querySelector('.mobile-nav');if(shell)shell.inert=true;if(nav)nav.inert=true;
               if(session?.user?.id)try{put(marker,{id:session.user.id,email:session.user.email||''})}catch{}
               else del(marker);window.location.reload();
             }
@@ -689,11 +701,16 @@
     if(!prior&&!cached&&!callback)return;
     try{
       const c=await load();const {data,error}=await c.auth.getSession();if(error)throw error;
-      if(data.session?.user){useAccount(data.session.user);return}
+      if(data.session?.user){
+        if(navigator.onLine){const verified=await c.auth.getUser();if(verified.error||verified.data?.user?.id!==data.session.user.id)throw verified.error||new Error('Sessão inválida.');}
+        sessionExpiry=Number(data.session.expires_at)||0;
+        if(sessionExpiry<=Date.now()/1000)throw new Error('Sessão expirada.');
+        if(useAccount(data.session.user))return;
+      }
       del(marker);recovery=false;
     }catch(e){
       // Cached account data may be used only as a local offline cache; no cloud authorization is inferred.
-      if(navigator.onLine===false&&validUid(prior?.id)&&cached?.user?.id===prior.id&&cached?.access_token){useAccount(prior);return}
+      if(navigator.onLine===false&&validUid(prior?.id)&&cached?.user?.id===prior.id&&cached?.access_token&&Number(cached.expires_at)>Date.now()/1000){sessionExpiry=Number(cached.expires_at);useAccount(prior);return}
       del(marker);recovery=false;
     }
   }
@@ -830,14 +847,14 @@
   async function changePassword(){
     if(busy)return;const password=$('cloudNewPassword').value;if(password.length<8){msg('Use pelo menos 8 caracteres.');return}
     busy=true;render();
-    try{const c=await sessionClient(),{error}=await c.auth.updateUser({password});if(error)throw error;recovery=false;$('cloudNewPassword').value='';msg('Senha atualizada.');schedule(50)}
+    try{const c=await sessionClient(),{error}=await c.auth.updateUser({password});if(error)throw error;recovery=false;$('cloudNewPassword').value='';msg('Senha atualizada.');location.reload()}
     catch(e){msg(String(e?.message||e).slice(0,250))}
     finally{busy=false;render()}
   }
   async function logout(){
     if(busy)return;
     if(!confirm(meta.dirty?'Há alterações ainda não sincronizadas. Sair e manter as alterações no cache desta conta?':'Sair desta conta? O cache separado permanecerá neste navegador.'))return;
-    busy=true;render();clearTimeout(timer);
+    busy=true;ready=false;render();clearTimeout(timer);
     try{if(client){const {error}=await client.auth.signOut({scope:'local'});if(error)throw error}}
     catch{msg('Sessão local encerrada; não foi possível revogar a sessão no servidor.')}
     finally{del(authKey);del(marker);location.reload()}
@@ -845,18 +862,20 @@
   function mount(){
     if(setupDone)return;
     const panel=document.createElement('section');panel.id='cloudPanel';panel.className='panel cloud-panel';
-    panel.innerHTML='<div class="cloud-head"><div><div class="eyebrow">VESTE 4.0 · MINHA CONTA</div><h2>Seu closet, onde estiver.</h2></div><span id="cloudState" class="cloud-state">Modo local</span></div><div id="cloudGuest"><p>Entre para sincronizar suas peças, fotos, calendário e estilo. Você também pode continuar no modo local.</p><div class="cloud-fields"><label>E-mail<input id="cloudEmail" type="email" autocomplete="email" placeholder="seu@email.com"></label><label>Senha<input id="cloudPassword" type="password" autocomplete="current-password" minlength="8" placeholder="Mínimo 8 caracteres"></label></div><div class="v3actions"><button class="btn btn-dark" id="cloudLogin">Entrar</button><button class="btn btn-outline" id="cloudSignup">Criar conta</button><button class="text-button" id="cloudReset">Esqueci a senha</button></div><p class="v3muted">O Google será disponibilizado após configuração do provedor. A confirmação de cadastro e a recuperação dependem da configuração de e-mail e do endereço de retorno do Supabase.</p></div><div id="cloudSigned" hidden><p id="cloudIdentity"></p><div class="v3actions"><button class="btn btn-dark" id="cloudSync">↻ Sincronizar agora</button><button class="btn btn-outline" id="cloudMigrate">Importar closet local</button><button class="text-button" id="cloudLogout">Sair</button></div><div id="cloudConflict" class="cloud-conflict" hidden><strong>Qual versão deve ser mantida?</strong><p>Exporte um backup antes de substituir qualquer versão. Uma escolha pode descartar alterações do outro dispositivo.</p><div class="v3actions"><button class="btn btn-outline" id="cloudKeepRemote">Usar versão da nuvem</button><button class="btn btn-outline" id="cloudKeepLocal">Enviar versão deste aparelho</button></div></div><p class="v3muted">Fotos privadas e dados separados por conta. O cache continua no dispositivo para uso local; sair não apaga o cache. Em aparelho compartilhado, evite guardar dados pessoais no modo local.</p></div><div id="cloudRecovery" hidden><label>Nova senha<input type="password" id="cloudNewPassword" autocomplete="new-password"></label><button class="btn btn-dark" id="cloudChangePassword">Atualizar senha</button></div><p id="cloudMessage" class="cloud-message" aria-live="polite"></p>';
-    $('todayPanel').insertAdjacentElement('beforebegin',panel);
+    panel.innerHTML='<div class="cloud-head"><div><div class="eyebrow">VESTE 4.1 · MINHA CONTA</div><h2>Seu closet, onde estiver.</h2></div><span id="cloudState" class="cloud-state">Modo local</span></div><div id="cloudGuest"><p>Entre na sua conta para organizar suas roupas, criar looks e descobrir seu estilo. Seu closet é privado.</p><div class="cloud-fields"><label>E-mail<input id="cloudEmail" type="email" autocomplete="email" placeholder="seu@email.com"></label><label>Senha<input id="cloudPassword" type="password" autocomplete="current-password" minlength="8" placeholder="Mínimo 8 caracteres"></label></div><div class="v3actions"><button class="btn btn-dark" id="cloudLogin">Entrar</button><button class="btn btn-outline" id="cloudSignup">Criar conta</button><button class="text-button" id="cloudReset">Esqueci a senha</button></div><p class="v3muted">Ao criar sua conta, confirme seu endereço de e-mail.</p></div><div id="cloudSigned" hidden><p id="cloudIdentity"></p><div class="v3actions"><button class="btn btn-dark" id="cloudSync">↻ Sincronizar agora</button><button class="btn btn-outline" id="cloudMigrate">Importar closet local</button><button class="text-button" id="cloudLogout">Sair</button></div><div id="cloudConflict" class="cloud-conflict" hidden><strong>Qual versão deve ser mantida?</strong><p>Exporte um backup antes de substituir qualquer versão. Uma escolha pode descartar alterações do outro dispositivo.</p><div class="v3actions"><button class="btn btn-outline" id="cloudKeepRemote">Usar versão da nuvem</button><button class="btn btn-outline" id="cloudKeepLocal">Enviar versão deste aparelho</button></div></div><p class="v3muted">Fotos privadas e dados separados por conta. Sair bloqueia o acesso ao aplicativo; os dados locais permanecem separados para o próximo login.</p></div><div id="cloudRecovery" hidden><label>Nova senha<input type="password" id="cloudNewPassword" autocomplete="new-password"></label><button class="btn btn-dark" id="cloudChangePassword">Atualizar senha</button></div><div id="cloudBoot" hidden><p id="cloudBootText">Preparando seu guarda-roupa…</p><div class="v3actions"><button class="btn btn-outline" id="cloudRetry">Atualizar página</button><button class="text-button" id="cloudExitBlocked">Sair da conta</button></div></div><p id="cloudMessage" class="cloud-message" aria-live="polite"></p>';
+    $('authMount').replaceChildren(panel);
+    $('cloudRetry').onclick=()=>location.reload();$('cloudExitBlocked').onclick=logout;
+    $('cloudPassword').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();authAction('login')}});
     $('cloudLogin').onclick=()=>authAction('login');$('cloudSignup').onclick=()=>authAction('signup');$('cloudReset').onclick=()=>authAction('reset');$('cloudChangePassword').onclick=changePassword;
     $('cloudSync').onclick=()=>sync(true);$('cloudMigrate').onclick=guestMigration;$('cloudLogout').onclick=logout;
     $('cloudKeepLocal').onclick=()=>{if(confirm('Substituir os dados da nuvem pela versão deste aparelho? Recomendamos exportar um backup primeiro.'))sync(true,'local')};
     $('cloudKeepRemote').onclick=()=>{if(confirm('Substituir o closet deste aparelho pela versão da nuvem? Recomendamos exportar um backup primeiro.'))sync(true,'remote')};
     setupDone=true;render();
   }
-  function start(){ready=true;if(user&&!hadMeta&&state.pieces.length){meta.dirty=true;try{persist()}catch{}}render();if(user){schedule(100);window.addEventListener('online',()=>schedule(50));window.addEventListener('focus',()=>schedule(500));window.addEventListener('offline',render);setInterval(()=>{if(document.visibilityState==='visible'&&idle())sync(false)},30000)}}
-  return {prepare,mount,start,touch,account:()=>!!user,defaults,classify,validPath};
+  function start(){ready=true;if(user&&!hadMeta&&state.pieces.length){meta.dirty=true;try{persist()}catch{}}render();if(user){schedule(100);window.addEventListener('online',()=>schedule(50));window.addEventListener('focus',()=>schedule(500));window.addEventListener('offline',render);setInterval(()=>{if(document.visibilityState==='visible'&&idle())sync(false)},30000);setInterval(()=>{if(ready&&user&&sessionExpiry&&sessionExpiry<=Date.now()/1000&&!navigator.onLine){ready=false;clearTimeout(timer);document.querySelectorAll('dialog[open]').forEach(d=>d.close());bootError='Sua sessão expirou. Conecte-se à internet e atualize a página para entrar novamente.';render()}},15000)}}
+  function fail(message){ready=false;bootError=message;render()}
+  return {prepare,mount,start,touch,account:()=>!!user,canEnter:()=>!!user&&!recovery,fail,defaults,classify,validPath};
 }
   const cloud=makeCloud();
-  atelierV3();
   init();
 })();
