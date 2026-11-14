@@ -72,6 +72,7 @@
   async function savePiece(e){e.preventDefault();const name=$('pieceName').value.trim(),group=$('pieceGroup').value;if(!name||!GROUPS[group]){notify('Preencha o nome e a categoria da peça.');return}if(!state.photoData){notify('Adicione uma foto da peça.');return}
     const original=state.editingId?pieceById(state.editingId):null;
     const piece={...original,id:original?.id||randomId(),name,group,subtype:$('v3_subtype')?.value.trim()||'',fabric:$('v3_fabric')?.value.trim()||'',lengthType:$('v3_lengthType')?.value.trim()||'',neckline:$('v3_neckline')?.value.trim()||'',coverage:$('v3_coverage')?.value||'',price:Math.max(0,Number($('v3_price')?.value)||0),color:$('pieceColor').value||'',pattern:$('piecePattern').value||'',fit:$('pieceFit').value||'',formality:Number($('pieceFormality').value)||null,occasions:selectedValues($('pieceOccasions')),seasons:selectedValues($('pieceSeasons')),styles:selectedValues($('pieceStyles')),available:$('pieceAvailable').checked,image:state.photoData,createdAt:original?.createdAt||new Date().toISOString(),useCount:original?.useCount||0,lastWorn:original?.lastWorn||null};
+    if(original&&isDemoPiece(original)&&state.photoData!==original.image){piece.demo=false;piece.source='Foto cadastrada no dispositivo'}
     const button=$('savePiece');button.disabled=true;button.textContent='Salvando...';try{await dbPut(piece);closePieceDialog();await refreshPieces();state.resultsGenerated=false;state.settings.weekPlan=null;saveLocal();notify(original?'Peça atualizada!':'Peça adicionada ao closet!')}catch(err){notify('Erro ao salvar. Verifique o espaço disponível no dispositivo.')}finally{button.disabled=false;button.textContent='Salvar peça'}
   }
   async function removePiece(id){const p=pieceById(id);if(!p||!confirm(`Excluir "${p.name}" do closet?`))return;try{await dbDelete(id);state.settings.favorites=state.settings.favorites.filter(f=>!f.ids.includes(id));state.settings.loved=state.settings.loved.filter(k=>!k.split('|').includes(id));state.settings.rejected=state.settings.rejected.filter(k=>!k.split('|').includes(id));state.settings.weekPlan=null;saveLocal();state.resultsGenerated=false;await refreshPieces();notify('Peça excluída.')}catch{notify('Erro ao excluir peça.')}}
@@ -240,7 +241,7 @@
     const ids=new Set(existing.map(p=>p.id)),images=new Set(existing.map(p=>p.image));
     const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim().replace(/\s+/g,' ');
     const sig=p=>[p.group,p.color,norm(p.name)].join('|');
-    const known=new Set(existing.map(sig)),accepted=[];let skipped=0;
+    const known=new Set(existing.filter(p=>!isDemoPiece(p)).map(sig)),accepted=[];let skipped=0;
     const enums=(val,set)=>Array.isArray(val)?[...new Set(val.filter(k=>typeof k==='string'&&Object.prototype.hasOwnProperty.call(set,k)))]:[];
     const short=(s,n=65)=>typeof s==='string'?s.trim().slice(0,n):'';
     for(const p of data.pieces){
@@ -267,6 +268,7 @@
   }
 
   function setupEvents(){
+    const notice=document.createElement('div');notice.id='vesteDemoNotice';notice.className='veste-demo-notice';$('closetSummary').insertAdjacentElement('beforebegin',notice);
     const bulk=$('v3bulk');
     if(bulk){const label=document.createElement('label');label.className='btn btn-outline v3file';label.append('↓ Importar peças (.json)');const input=document.createElement('input');input.type='file';input.accept='application/json,.json';input.hidden=true;input.id='v3importPiecePack';label.append(input);bulk.closest('label').insertAdjacentElement('afterend',label);input.addEventListener('change',importPiecePack);}
     document.addEventListener('click',e=>{
@@ -288,7 +290,98 @@
     $('generateBtn').addEventListener('click',()=>{generateLooks();if(!state.candidates.length)notify('Cadastre mais peças para montar uma combinação.')});
     $('savePrefs').addEventListener('click',savePreferences);$('resetFeedback').addEventListener('click',resetFeedback);$('exportBackup').addEventListener('click',exportBackup);$('importBackup').addEventListener('click',()=>$('backupFile').click());$('backupFile').addEventListener('change',importBackup);
   }
-  async function init(){makeColorOptions();makeAvoidColors();$('weatherCity').value=state.settings.weatherCity||'Rio de Janeiro';renderAdvanced();createChecks('pieceOccasions',OCCASIONS);createChecks('pieceSeasons',SEASONS);createChecks('pieceStyles',STYLES);setupEvents();try{state.db=await openDatabase();await refreshPieces()}catch(err){notify('Armazenamento não disponível. Use Safari/Chrome normal fora do modo privado.');document.querySelectorAll('[data-action="add"]').forEach(b=>b.disabled=true);$('generateBtn').disabled=true;console.error(err)}if('serviceWorker' in navigator&&['http:','https:'].includes(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});}
+
+  // Generic illustrated clothes, saved locally only. No personal photos or account data.
+  const demoIdPrefix='veste-demo-';
+  const demoDefinitions=[
+    {id:'blazer',name:'Blazer bege / caramelo',group:'layer',color:'caramelo',fit:'regular',formality:4,subtype:'blazer',fabric:'',occasions:['trabalho','casual','noite'],seasons:['ameno','frio'],styles:['elegante','classico']},
+    {id:'blusa',name:'Blusa clara',group:'top',color:'offwhite',fit:'regular',formality:3,subtype:'blusa',occasions:['trabalho','casual','noite'],seasons:['quente','ameno'],styles:['casual','elegante','minimalista']},
+    {id:'calca',name:'Calça preta',group:'bottom',color:'preto',fit:'regular',formality:4,subtype:'calca',occasions:['trabalho','casual','noite','evento'],seasons:['ameno','quente','frio'],styles:['elegante','classico','minimalista']},
+    {id:'cinto',name:'Cinto fino bege',group:'accessory',color:'bege',formality:3,subtype:'cinto',occasions:['trabalho','casual','noite'],seasons:['quente','ameno','frio'],styles:['elegante','classico','minimalista']},
+    {id:'sapatilha',name:'Sapatilha bege',group:'shoes',color:'bege',formality:3,subtype:'sapatilha',occasions:['trabalho','casual','noite'],seasons:['quente','ameno'],styles:['elegante','classico','romantico']},
+    {id:'sueter',name:'Suéter de losangos',group:'top',color:'preto',fit:'regular',formality:3,subtype:'sueter',pattern:'xadrez',fabric:'tricô aparente (ilustração)',occasions:['trabalho','casual'],seasons:['ameno','frio'],styles:['classico','criativo']}
+  ];
+  function isDemoPiece(p){return Boolean(p&&p.demo!==false&&(p.demo===true||String(p.id).startsWith(demoIdPrefix)))}
+  function demoImage(id){
+    const c=document.createElement('canvas');c.width=480;c.height=480;
+    const x=c.getContext('2d');if(!x)throw new Error('Não foi possível desenhar as peças de teste.');
+    x.scale(2,2);const g=x.createLinearGradient(0,0,240,240);g.addColorStop(0,'#faf7f1');g.addColorStop(1,'#e9e0d4');x.fillStyle=g;x.fillRect(0,0,240,240);
+    const path=(d,fill,stroke='#67594d',lw=.8)=>{const p=new Path2D(d);if(fill){x.fillStyle=fill;x.fill(p)}if(stroke){x.strokeStyle=stroke;x.lineWidth=lw;x.lineJoin='round';x.stroke(p)}return p};
+    const line=(d,color='#82786e',w=1)=>path(d,null,color,w);
+    const circle=(cx,cy,r,color)=>{x.fillStyle=color;x.beginPath();x.arc(cx,cy,r,0,Math.PI*2);x.fill()};
+    x.shadowColor='#31261922';x.shadowBlur=9;x.shadowOffsetY=5;
+    if(id==='blazer'){
+      path('M72 43 96 27 120 47 144 27 168 43 198 146 179 152 164 100 166 213 74 213 76 100 61 152 42 146Z','#b68e6a','#8d6a50');
+      x.shadowColor='transparent';
+      path('M96 27 82 63 100 79 90 89 120 140 120 47Z','#c4a081','#967357');
+      path('M144 27 158 63 140 79 150 89 120 140 120 47Z','#cba98b','#967357');
+      line('M120 140V212 M77 153H104 M136 153H163','#866447',1.7);
+      circle(126,155,2.7,'#694e3c');circle(126,177,2.7,'#694e3c');
+    }else if(id==='blusa'){
+      path('M76 46 99 34Q120 60 141 34L164 46 196 94 169 111 155 89 159 197Q120 207 81 197L85 89 71 111 44 94Z','#f6f2e7','#c9bfae',1.1);
+      x.shadowColor='transparent';line('M99 36Q120 69 141 36 M86 190Q120 197 154 190','#ded3c1',1.3);
+    }else if(id==='calca'){
+      path('M78 27Q120 33 162 27L174 119 166 216H131L120 102 109 216H74L66 119Z','#27262a','#19191c',1);
+      x.shadowColor='transparent';line('M78 44Q120 50 162 44 M120 47V103 M82 49Q84 72 101 73 M158 49Q156 72 139 73','#66646a',1.1);circle(125,43,2.4,'#b9a88b');
+    }else if(id==='cinto'){
+      path('M32 102Q85 80 146 102L205 102 205 121 145 121Q83 98 32 121Z','#b59b7b','#8f7355',1);
+      x.shadowColor='transparent';path('M34 100H61Q69 100 69 109V119Q69 126 61 126H34Q26 126 26 117V109Q26 100 34 100Z',null,'#9e7837',3.2);line('M34 113H61','#9e7837',1.6);[161,172,183,194].forEach(a=>circle(a,111,1.5,'#816b52'));
+    }else if(id==='sapatilha'){
+      const shoe='M72 49Q95 29 111 57L121 95Q128 141 113 181 89 207 66 180 56 163 58 130L57 84Q57 62 72 49Z';
+      path(shoe,'#bfa98f','#9e876f');x.shadowColor='transparent';path('M74 65Q91 45 103 67L111 102 106 143Q91 157 72 140L66 102Z','#85715e','#a18a72');
+      x.save();x.translate(76,1);path(shoe,'#bfa98f','#9e876f');path('M74 65Q91 45 103 67L111 102 106 143Q91 157 72 140L66 102Z','#85715e','#a18a72');x.restore();
+      line('M67 159Q88 168 111 159 M143 159Q164 168 187 159','#9e876f',1.5);
+    }else{
+      const p=path('M75 42 98 30Q120 49 142 30L165 42 190 153 168 160 155 93 158 204 82 204 85 93 72 160 50 153Z','#29282d','#252328');
+      x.shadowColor='transparent';x.save();x.clip(p);
+      for(let row=-1;row<6;row++)for(let col=-1;col<5;col++){
+        const cx=80+col*32+(row%2===0?0:16),cy=65+row*30;
+        if(cx<75||cx>165)continue;
+        path('M'+cx+' '+(cy-23)+' '+(cx+16)+' '+cy+' '+cx+' '+(cy+23)+' '+(cx-16)+' '+cy+'Z',(col+row)%2===0?'#b6aaa3':'#9a6870',null);
+      }
+      x.restore();line('M98 32Q120 60 142 32 M81 193H159 M52 147L73 153 M167 153L187 147','#514b51',3);
+    }
+    x.shadowColor='transparent';x.fillStyle='#74695d';x.font='9px system-ui';x.textAlign='center';x.fillText('VESTE · ILUSTRAÇÃO DE TESTE',120,232);
+    return c.toDataURL('image/png');
+  }
+  function demoPieces(){
+    return demoDefinitions.map(p=>({...p,id:demoIdPrefix+p.id,pattern:p.pattern||'liso',fit:p.fit||'',available:true,image:demoImage(p.id),demo:true,source:'Ilustração de teste (não é a foto original)',createdAt:new Date().toISOString(),useCount:0,lastWorn:null,coverage:p.group==='top'?'normal':'',price:0}));
+  }
+  async function addDemoCloset(automatic=false){
+    const existing=await dbGetAll();
+    if(automatic&&(existing.length||state.settings.demoInitialized))return false;
+    const ids=new Set(existing.map(p=>p.id));
+    const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const sig=p=>[p.group,p.color,norm(p.name)].join('|'),known=new Set(existing.map(sig));
+    const added=demoPieces().filter(p=>!ids.has(p.id)&&!known.has(sig(p)));
+    if(added.length){
+      await new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');t.oncomplete=resolve;t.onabort=()=>reject(t.error);t.onerror=()=>reject(t.error);added.forEach(p=>store.put(p))});
+    }
+    state.settings.demoInitialized=true;saveLocal();state.resultsGenerated=false;
+    if(!automatic){await refreshPieces();notify(added.length?added.length+' peça(s) de teste adicionadas.':'O closet de teste já está disponível.')}
+    return added.length>0;
+  }
+  async function removeDemoCloset(){
+    const all=await dbGetAll(),ids=new Set(all.filter(isDemoPiece).map(p=>p.id));
+    if(!ids.size)return;
+    if(!confirm('Remover somente as peças ilustradas de teste e os registros de looks que as incluem? Suas roupas reais serão mantidas.'))return;
+    await new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');t.oncomplete=resolve;t.onabort=()=>reject(t.error);t.onerror=()=>reject(t.error);ids.forEach(id=>store.delete(id))});
+    const hasDemo=key=>String(key||'').split('|').some(id=>ids.has(id));
+    state.settings.loved=state.settings.loved.filter(k=>!hasDemo(k));state.settings.rejected=state.settings.rejected.filter(k=>!hasDemo(k));state.settings.favorites=state.settings.favorites.filter(f=>!f.ids.some(id=>ids.has(id)));state.settings.wearHistory=state.settings.wearHistory.filter(w=>!hasDemo(w.key));
+    if(state.settings.weekPlan?.days?.some(d=>d.ids?.some(id=>ids.has(id))))state.settings.weekPlan=null;
+    if(state.settings.v3){state.settings.v3.feedback=(state.settings.v3.feedback||[]).filter(e=>!(e.ids||[]).some(id=>ids.has(id)));if(state.settings.v3.trip?.ids?.some(id=>ids.has(id)))state.settings.v3.trip=null}
+    state.settings.demoInitialized=true;state.candidates=[];state.resultsGenerated=false;saveLocal();await refreshPieces();notify('Peças de demonstração removidas.');
+  }
+  function renderDemoNotice(){
+    const box=$('vesteDemoNotice');if(!box)return;const count=state.pieces.filter(isDemoPiece).length;
+    box.innerHTML=count?'<strong>Closet de teste · '+count+' peças ilustradas</strong><p>As imagens são desenhos genéricos, não fotos privadas. Teste looks, calendário, mala e preferências. Remova o lote quando quiser usar apenas roupas reais.</p><button type="button" class="btn btn-outline" id="vesteDemoRemove">Remover peças de teste</button>':'<strong>Quer testar com roupas de exemplo?</strong><p>Carregue seis peças ilustradas sem alterar suas roupas atuais.</p><button type="button" class="btn btn-outline" id="vesteDemoLoad">Carregar closet de teste</button>';
+    const remove=$('vesteDemoRemove'),load=$('vesteDemoLoad');
+    if(remove)remove.onclick=()=>removeDemoCloset().catch(err=>notify(err.message||'Não foi possível remover as peças.'));
+    if(load)load.onclick=()=>addDemoCloset(false).catch(err=>notify(err.message||'Não foi possível carregar o teste.'));
+    document.querySelectorAll('#closetGrid .garment-card').forEach(el=>{const p=pieceById(el.querySelector('[data-edit]')?.dataset.edit);if(isDemoPiece(p))el.querySelector('.garment-info')?.insertAdjacentHTML('afterbegin','<span class="veste-demo-tag">ILUSTRAÇÃO · TESTE</span>')});
+  }
+
+  async function init(){makeColorOptions();makeAvoidColors();$('weatherCity').value=state.settings.weatherCity||'Rio de Janeiro';renderAdvanced();createChecks('pieceOccasions',OCCASIONS);createChecks('pieceSeasons',SEASONS);createChecks('pieceStyles',STYLES);setupEvents();try{state.db=await openDatabase();try{await addDemoCloset(true)}catch(err){console.warn('Demo skipped',err)}await refreshPieces()}catch(err){notify('Armazenamento não disponível. Use Safari/Chrome normal fora do modo privado.');document.querySelectorAll('[data-action="add"]').forEach(b=>b.disabled=true);$('generateBtn').disabled=true;console.error(err)}if('serviceWorker' in navigator&&['http:','https:'].includes(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});}
   function atelierV3(){
   const v=()=>{if(!state.settings.v3||typeof state.settings.v3!=='object'||Array.isArray(state.settings.v3))state.settings.v3={};const x=state.settings.v3;if(!x.ratings||typeof x.ratings!=='object'||Array.isArray(x.ratings))x.ratings={};if(!Array.isArray(x.feedback))x.feedback=[];if(!Array.isArray(x.wishes))x.wishes=[];if(x.trip&&(!Array.isArray(x.trip.ids)||!Array.isArray(x.trip.days)||!Array.isArray(x.trip.checked)))x.trip=null;return x};
   const E=escapeHTML;
@@ -400,7 +493,7 @@
     locks.push(id);renderLocks();navigate("looks");generateLooks();
   }
   renderLooks=function(){oldRenderLooks();renderLocks();if(state.resultsGenerated&&!state.candidates.length&&locks.length)$("lookGuidance").textContent="Nenhum look atende às peças fixadas e às regras. Remova uma peça, altere o clima ou revise a disponibilidade.";document.querySelectorAll("#looksGrid .look-card").forEach((el,i)=>{const c=state.candidates[i];if(!c)return;el.querySelector(".look-content")?.insertAdjacentHTML("beforeend",'<div class="v3actions"><button class="btn btn-outline" data-v3-swap="'+E(c.key)+'">Trocar peça</button><button class="btn btn-outline" data-v3-try="'+E(c.key)+'">Provador</button></div>')})};
-  renderCloset=function(){oldRenderCloset();const f=$("v3availability")?.value||"all";document.querySelectorAll("#closetGrid .garment-card").forEach(el=>{const id=el.querySelector("[data-edit]")?.dataset.edit,p=pieceById(id);if(!p)return;if((f==="available"&&p.available===false)||(f==="laundry"&&p.available!==false))el.hidden=true;el.querySelector(".garment-actions")?.insertAdjacentHTML("beforeend",'<button class="text-button" data-v3-lock="'+E(id)+'">Combinar</button><button class="text-button" data-v3-available="'+E(id)+'">'+(p.available===false?"Liberar":"Lavanderia")+'</button>');if(Number(p.price)>0)el.querySelector(".garment-info")?.insertAdjacentHTML("beforeend",'<small class="v3muted">'+(p.useCount?money(p.price/p.useCount)+" / uso":money(p.price)+" · sem uso registrado")+'</small>')});renderLocks()};
+  renderCloset=function(){oldRenderCloset();renderDemoNotice();const f=$("v3availability")?.value||"all";document.querySelectorAll("#closetGrid .garment-card").forEach(el=>{const id=el.querySelector("[data-edit]")?.dataset.edit,p=pieceById(id);if(!p)return;if((f==="available"&&p.available===false)||(f==="laundry"&&p.available!==false))el.hidden=true;el.querySelector(".garment-actions")?.insertAdjacentHTML("beforeend",'<button class="text-button" data-v3-lock="'+E(id)+'">Combinar</button><button class="text-button" data-v3-available="'+E(id)+'">'+(p.available===false?"Liberar":"Lavanderia")+'</button>');if(Number(p.price)>0)el.querySelector(".garment-info")?.insertAdjacentHTML("beforeend",'<small class="v3muted">'+(p.useCount?money(p.price/p.useCount)+" / uso":money(p.price)+" · sem uso registrado")+'</small>')});renderLocks()};
   const baseRender=renderAll;
   renderAll=function(){baseRender();renderLocks();if(state.view==="atelier")renderAtelier()};
   renderStyle=function(){oldRenderStyle();if($("v3profileSummary"))$("v3profileSummary").textContent=Object.entries(profileScore()).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]).map(([k])=>STYLES[k]).join(" · ")||"Ainda sem avaliações visuais."};

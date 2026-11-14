@@ -74,3 +74,7 @@ Abra `http://localhost:8080`. Todos os arquivos do app precisam ficar na mesma p
 ### Importar peças sem substituir o closet
 
 Na aba Closet, escolha **Importar peças (.json)**. Aceita um pacote `veste-pieces` ou um backup VESTE. Somente peças novas são adicionadas; não importa configurações nem histórico e ignora ID, foto ou nome/categoria/cor duplicados. Nenhuma foto pessoal está incluída no repositório. As peças importadas ficam no IndexedDB local.
+
+### Closet ilustrado para teste (3.2)
+
+Na primeira abertura com closet vazio, seis roupas de demonstração são geradas localmente como PNGs de ilustrações genéricas, sem fotos pessoais no repositório. Os registros têm marcação de teste e podem ser removidos em Meu closet. Nunca substitui um closet existente. Se o usuário trocar a imagem de uma peça ilustrada, ela passa a ser considerada uma peça real. A importação de fotos reais continua disponível. Os dados são privados no navegador e não há sincronização.
