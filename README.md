@@ -1,1 +1,64 @@
-# Veste
+# VESTE 2 — seu guarda-roupa inteligente
+
+Aplicativo web instalável (PWA), em português, para organizar fotos de roupas reais e criar looks adequados ao seu estilo e à ocasião. **A versão 2 mantém a mesma base local e as mesmas chaves de armazenamento da versão 1**, de modo que a atualização no mesmo endereço normalmente preserva as peças, favoritos e histórico.
+
+## Novidades da versão 2
+
+1. **Reconhecimento visual opcional com IA.** Depois de conectar sua chave pessoal do Google Gemini em **Meu estilo → Conectar IA**, fotografe uma peça. A IA pode sugerir nome, categoria, cor, estampa, modelagem, nível de formalidade, ocasiões, temperatura e estilos. **Revise e corrija tudo antes de salvar.**
+2. **O que vestir hoje?** Na tela Início, informe a cidade e clique em **Ver previsão**. O VESTE consulta o serviço Open-Meteo e usa temperatura e chance de chuva para sugerir roupas do seu closet. Sem internet, o clima permanece manual.
+3. **Minha semana.** Uma nova aba gera looks para sete dias, com ocasião de segunda a sexta e outra para sábado e domingo. Tenta variar os itens e usa a previsão, se consultada.
+4. **Peças esquecidas.** O closet destaca as roupas com menos usos registrados.
+5. **Regras de preferência.** Permite evitar combinações de duas cores, controlar o uso de acessórios e evitar repetir peças recentemente.
+6. **Consultoria opcional de IA para looks.** Depois de gerar combinações, o botão **Analisar looks com IA** envia **descrições cadastradas das peças, não as fotos**, para receber uma segunda avaliação e reordenação.
+7. **Backup compatível.** Exportação e restauração em JSON continuam funcionando com arquivos da versão 1.
+
+## Instalar pela primeira vez
+
+1. Descompacte `VESTE_v2.zip`.
+2. Em <https://app.netlify.com/drop>, publique os arquivos do app (enviando a pasta extraída como site).
+3. Abra o endereço HTTPS no Safari do iPhone.
+4. Se desejar, use **Compartilhar → Adicionar à Tela de Início**.
+
+## Atualizar uma instalação da versão 1 sem perder seu closet
+
+1. Abra a **versão 1 no endereço que você usa hoje** e entre em **Meu estilo → Exportar backup**. Guarde o JSON em Arquivos ou iCloud Drive.
+2. Acesse o painel do **mesmo site** no Netlify, vá à área de deploys e envie a pasta com a versão 2 para esse site existente. **Não crie um segundo endereço**, pois o armazenamento local é separado por origem/endereço.
+3. Abra novamente o endereço original no Safari. Pode ser necessário fechar o app e atualizar a página para que o novo service worker assuma.
+4. Confira o closet, favoritos e histórico. Se estiverem vazios, use **Restaurar backup** do arquivo JSON exportado.
+
+Observação: baixar um ZIP por si só não publica nem instala o aplicativo. Ao trocar de iPhone ou limpar dados do Safari, use um backup. Fotos e registros **não são sincronizados entre dispositivos**.
+
+## Como conectar IA
+
+1. Obtenha uma chave pessoal em <https://aistudio.google.com/apikey> (requer conta Google e acesso à API).
+2. Em **Meu estilo → Conectar IA**, cole a chave e deixe o modelo padrão `gemini-3.6-flash` ou digite um modelo que esteja habilitado na sua conta.
+3. Clique **Conectar nesta sessão**. O aplicativo **não guarda sua chave** em `localStorage`, `IndexedDB` ou backups. Você precisará inseri-la de novo quando recarregar.
+4. Ao adicionar uma foto, use **Identificar peça com IA** ou mantenha ligada a opção de analisar automaticamente. Confira os campos antes de salvar.
+5. Em **Criar looks**, o botão **Analisar looks com IA** pede uma nova avaliação a partir de metadados de até cinco combinações.
+
+**Privacidade e custos:** suas fotos de roupas permanecem no navegador, **exceto quando você chama a classificação com IA, situação em que a foto é enviada ao Google**. As descrições das peças são enviadas quando você usa análise de looks com IA. A consulta do clima envia a cidade aos serviços Open-Meteo. Serviços externos podem exigir rede, ter limites de uso e cobrar por requisições. Não compartilhe a chave de API; não a insira em um projeto público nem em arquivos que serão compartilhados.
+
+## Como obter boas sugestões
+
+- Cadastre pelo menos partes de cima, partes de baixo e calçados. Uma peça única, como vestido, também funciona como base.
+- Fotografe cada item individualmente, com boa luz e fundo simples.
+- Marque suas preferências em **Meu estilo** e escolha as ocasiões e temperaturas adequadas de cada roupa.
+- Use **Amei** e **Não usaria**, salve seus favoritos e clique em **Usei esse look** quando realmente vestir a combinação.
+- As regras de não repetição são **preferências**, não garantias absolutas: com poucas peças pode ser inevitável repetir alguma roupa, especialmente calçados.
+
+## Limitações atuais
+
+- A primeira avaliação dos looks é feita por regras de compatibilidade, histórico de uso e preferências. A revisão textual por IA é opcional.
+- O app não simula roupas sobre uma foto de uma pessoa; exibe colagens das fotos cadastradas.
+- Sem chave de IA, a classificação de categoria, estampa e modelagem é manual; somente há uma sugestão aproximada da cor por processamento local.
+- A previsão pode falhar sem internet, por limitação do serviço ou geocodificação imprecisa; selecione manualmente um clima nesse caso.
+- **Não há login, backend, sincronização na nuvem nem acesso multiusuário.** O uso do mesmo endereço no mesmo navegador e o backup continuam essenciais.
+- A chave pessoal em um aplicativo 100% frontend é adequada para testes particulares, mas não para distribuição pública com uma chave compartilhada. Para um produto lançado a outras pessoas, será necessário um backend protegido e autenticação.
+
+## Desenvolvimento local
+
+```bash
+python3 -m http.server 8080
+```
+
+Abra `http://localhost:8080`. Todos os arquivos do app precisam ficar na mesma pasta: `index.html`, `app.js`, `styles.css`, `extra.css`, `sw.js`, `manifest.webmanifest` e os ícones.

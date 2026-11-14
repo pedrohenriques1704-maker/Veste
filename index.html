@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f4ef">
+  <meta name="description" content="Seu guarda-roupa digital: organize suas roupas e crie looks com o que você já tem.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/png" href="./icon-192.png">
+  <link rel="apple-touch-icon" href="./icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./extra.css">
+  <title>VESTE — Seu guarda-roupa inteligente</title>
+</head>
+<body>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">✳</span><span>VESTE<span class="brand-dot">.</span></span></div>
+      <p class="sidebar-caption">Seu estilo, suas peças.</p>
+      <div class="nav-label">SEU ESPAÇO</div>
+      <nav class="nav-list" aria-label="Navegação principal">
+        <button class="nav-btn active" data-route="home"><span class="nav-icon">⌂</span> Início</button>
+        <button class="nav-btn" data-route="closet"><span class="nav-icon">▦</span> Meu closet</button>
+        <button class="nav-btn" data-route="looks"><span class="nav-icon">✦</span> Criar looks</button>
+        <button class="nav-btn" data-route="week"><span class="nav-icon">▤</span> Minha semana</button>
+        <button class="nav-btn" data-route="style"><span class="nav-icon">♡</span> Meu estilo</button>
+      </nav>
+      <div class="sidebar-bottom"><span class="little-dot"></span> Seu armário fica salvo neste dispositivo.<br><span class="small-muted">Faça backups em Meu estilo.</span></div>
+    </aside>
+
+    <div class="main-area">
+      <header class="topbar">
+        <div class="mobile-brand"><span class="brand-mark">✳</span> VESTE<span class="brand-dot">.</span></div>
+        <div class="topbar-label" id="topbarTitle">SEU ESPAÇO</div>
+        <button class="add-inline" type="button" data-action="add">+ Adicionar peça</button>
+      </header>
+      <main class="main-content">
+        <section id="view-home" class="view active" aria-labelledby="homeTitle">
+          <div class="home-hero">
+            <div class="hero-copy">
+              <div class="eyebrow"><span class="sparkle">✦</span> SEU CLOSET, REDESCOBERTO</div>
+              <h1 id="homeTitle">Mais looks.<br><em>As mesmas peças.</em></h1>
+              <p>Seu guarda-roupa pode render muito mais. Cadastre suas roupas, defina seu gosto e descubra combinações que fazem sentido para você.</p>
+              <div class="hero-actions">
+                <button class="btn btn-dark" data-route="looks">Criar um look <span aria-hidden="true">↗</span></button>
+                <button class="btn btn-outline" data-action="add">Adicionar roupa</button>
+              </div>
+            </div>
+            <div class="hero-art" aria-hidden="true"><div class="arc arc-one"></div><div class="arc arc-two"></div><div class="art-card card-back"><span>COMBINE</span><div class="art-circle"></div></div><div class="art-card card-front"><span>SEU ESTILO.</span><div class="art-line"></div><span class="art-star">✳</span></div></div>
+          </div>
+          <div class="stats-strip">
+            <div><span class="stat-num" id="statPieces">0</span><span class="stat-label">peças no closet</span></div>
+            <div><span class="stat-num" id="statFavorites">0</span><span class="stat-label">looks favoritos</span></div>
+            <div><span class="stat-num" id="statWorn">0</span><span class="stat-label">looks usados</span></div>
+          </div>
+          <div class="today-panel" id="todayPanel">
+            <div class="today-top"><div><div class="eyebrow">BOM DIA, SEU CLOSET</div><h2>O que vestir hoje?</h2><p>Uma sugestão com suas peças e o clima da sua cidade.</p></div><div class="today-weather" id="todayWeather">Previsão ainda não consultada</div></div>
+            <div class="today-controls"><label class="city-label">Sua cidade <input id="weatherCity" value="Rio de Janeiro" placeholder="Ex.: Rio de Janeiro" autocomplete="address-level2"></label><button class="btn btn-outline" id="getForecast">↻ Ver previsão</button><button class="btn btn-dark" id="todayGenerate">✦ Montar look de hoje</button></div>
+            <div id="todayLook" class="today-result"></div><p class="subnote">Previsão online mediante consulta. Você pode continuar usando o app sem clima automático.</p>
+          </div>
+          <div class="section-heading"><div><div class="eyebrow subtle">COMECE POR AQUI</div><h2>Um closet com a sua cara</h2></div></div>
+          <div class="steps-grid">
+            <button class="step-card" data-action="add"><div class="step-icon">01 <span>↗</span></div><h3>Fotografe suas peças</h3><p>Cadastre roupas, sapatos e acessórios com foto, cor e categoria.</p></button>
+            <button class="step-card" data-route="style"><div class="step-icon">02 <span>↗</span></div><h3>Ensine seu gosto</h3><p>Escolha os estilos que gosta. Dê feedback nas sugestões.</p></button>
+            <button class="step-card" data-route="looks"><div class="step-icon">03 <span>↗</span></div><h3>Descubra combinações</h3><p>Crie looks por ocasião e temperatura, sem precisar comprar nada.</p></button>
+          </div>
+          <div id="recentFavorites" class="recent-favorites"></div>
+        </section>
+
+        <section id="view-closet" class="view" aria-labelledby="closetTitle">
+          <div class="page-heading"><div><div class="eyebrow">SUAS PEÇAS, ORGANIZADAS</div><h1 id="closetTitle">Meu closet<span class="period">.</span></h1><p>Cada peça cadastrada aumenta as possibilidades de combinação.</p></div><button class="btn btn-dark" data-action="add">+ Nova peça</button></div>
+          <div class="closet-tools"><label class="search-wrap"><span>⌕</span><input id="closetSearch" type="search" placeholder="Buscar uma peça..." aria-label="Buscar uma peça"></label><select id="closetGroup" aria-label="Filtrar categoria"><option value="all">Todas as categorias</option><option value="top">Parte de cima</option><option value="bottom">Parte de baixo</option><option value="layer">Terceira peça</option><option value="shoes">Calçados</option><option value="accessory">Acessórios</option><option value="onepiece">Peça única</option></select></div>
+          <div class="closet-summary" id="closetSummary"></div>
+          <div class="forgotten-panel" id="forgottenPanel"></div><div id="closetGrid" class="closet-grid"></div>
+        </section>
+
+        <section id="view-looks" class="view" aria-labelledby="looksTitle">
+          <div class="page-heading"><div><div class="eyebrow">UM LOOK PARA CADA MOMENTO</div><h1 id="looksTitle">Vamos combinar<span class="period">.</span></h1><p>Escolha a ocasião. O VESTE monta sugestões com as suas próprias peças.</p></div></div>
+          <div class="look-config"><div class="config-item"><label for="occasion">Para onde você vai?</label><select id="occasion"><option value="trabalho">Trabalho</option><option value="casual">Dia a dia</option><option value="evento">Evento / ocasião especial</option><option value="noite">Sair à noite</option><option value="esporte">Esporte / atividade</option></select></div><div class="config-item"><label for="weather">Como está o tempo?</label><select id="weather"><option value="ameno">Ameno</option><option value="quente">Quente</option><option value="frio">Frio</option></select></div><button class="btn btn-dark generate-btn" id="generateBtn">✦ Gerar looks</button></div>
+          <div class="look-intro" id="lookIntro"><span class="eyebrow subtle">ESCOLHIDOS PARA VOCÊ</span><span id="lookCountCaption">Sugestões com o que você já tem</span></div>
+          <div id="looksGrid" class="looks-grid"></div>
+          <div id="lookGuidance" class="look-guidance"></div><div class="ai-rank-box"><div><strong>Consultoria de estilo com IA</strong><p>Com a chave conectada, a IA compara as combinações geradas usando os dados cadastrados das peças e seu perfil.</p></div><button class="btn btn-outline" id="aiReviewLooks">✳ Analisar looks com IA</button><div id="aiLookAdvice" class="ai-look-advice" aria-live="polite"></div></div>
+        </section>
+
+        <section id="view-week" class="view" aria-labelledby="weekTitle">
+          <div class="page-heading"><div><div class="eyebrow">SETE DIAS, SEU GUARDA-ROUPA</div><h1 id="weekTitle">Minha semana<span class="period">.</span></h1><p>Planeje looks variados e aproveite peças que você quase não usa.</p></div></div>
+          <div class="week-config"><label>Segunda a sexta <select id="weekdayOccasion"><option value="trabalho">Trabalho</option><option value="casual">Dia a dia</option><option value="evento">Evento</option><option value="noite">Sair à noite</option><option value="esporte">Esporte</option></select></label><label>Sábado e domingo <select id="weekendOccasion"><option value="casual">Dia a dia</option><option value="trabalho">Trabalho</option><option value="evento">Evento</option><option value="noite">Sair à noite</option><option value="esporte">Esporte</option></select></label><button class="btn btn-dark" id="generateWeek">✦ Planejar 7 dias</button></div>
+          <p class="week-hint" id="weekHint">O planejamento considera disponibilidade, estilo, repetição e previsão do tempo quando consultada.</p>
+          <div class="week-grid" id="weekGrid"></div>
+        </section>
+        <section id="view-style" class="view" aria-labelledby="styleTitle">
+          <div class="page-heading"><div><div class="eyebrow">MODA NÃO É REGRA, É PREFERÊNCIA</div><h1 id="styleTitle">Meu estilo<span class="period">.</span></h1><p>Quanto mais você define o que gosta, mais relevantes ficam suas combinações.</p></div></div>
+          <div class="settings-layout"><div class="settings-main"><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">01 / SEU PERFIL</div><h2>Como você gosta de se vestir?</h2><p>Você pode marcar mais de um estilo.</p></div><div class="style-options" id="styleOptions"></div><button class="btn btn-dark" id="savePrefs">Salvar preferências</button></div>
+          <div class="panel"><div class="panel-heading"><div class="eyebrow subtle">02 / SEU FEEDBACK</div><h2>O app aprende com você</h2><p>Use “Amei” e “Não usaria” nos looks gerados. As próximas sugestões levam isso em conta.</p></div><div class="feedback-stats" id="feedbackStats"></div><button class="text-button" id="resetFeedback">Limpar feedback de looks</button></div></div>
+          <div class="settings-side"><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">03 / REGRAS PESSOAIS</div><h2>Suas escolhas</h2><p>Defina o que o VESTE deve evitar ou priorizar.</p></div>
+            <label class="switch-line"><input type="checkbox" id="preferAccessories" checked> Sugerir acessórios nos looks</label>
+            <label class="field-label">Evitar repetir peças por <select id="repeatDays"><option value="0">Sem restrição</option><option value="2">2 dias</option><option value="3">3 dias</option><option value="7">7 dias</option></select></label>
+            <div class="bad-pairs"><strong>Cores que você não quer combinar</strong><div class="bad-pair-input"><select id="avoidColorA" aria-label="Primeira cor"></select><select id="avoidColorB" aria-label="Segunda cor"></select><button id="addAvoidPair" class="btn btn-outline">Adicionar</button></div><div id="avoidPairsList"></div></div>
+            <button class="btn btn-dark" id="saveAdvanced">Salvar regras</button>
+          </div><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">04 / RECONHECIMENTO DE FOTO</div><h2>Conectar IA</h2><p>Use uma chave pessoal do Google Gemini para sugerir categoria, cor, estilo, modelagem e estampa a partir da foto.</p></div>
+            <label class="field-label">Chave de API <input type="password" id="aiKey" placeholder="Cole sua chave aqui" autocomplete="off" spellcheck="false"></label><label class="field-label">Modelo <input type="text" id="aiModel" value="gemini-3.6-flash" autocomplete="off" spellcheck="false"></label>
+            <label class="switch-line"><input type="checkbox" id="aiAutoAnalyze" checked> Analisar automaticamente novas fotos</label>
+            <button class="btn btn-dark" id="connectAI">Conectar nesta sessão</button><button class="text-button" id="disconnectAI">Desconectar</button><div class="ai-status" id="aiStatus" aria-live="polite">IA desconectada. O app funciona sem chave.</div>
+            <p class="note">A chave fica somente na memória desta aba e some ao fechar ou recarregar. Ao analisar uma foto, a imagem é enviada ao serviço do Google. Pode haver custos de API. Nunca publique sua chave no código do site.</p>
+            <a class="simple-link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Obter chave no Google AI Studio ↗</a>
+          </div><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">03 / SEUS FAVORITOS</div><h2>Looks salvos</h2></div><div id="favoritesList"></div></div><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">04 / SEUS DADOS</div><h2>Backup do closet</h2><p>Suas fotos não são enviadas para um servidor. Exporte um arquivo para não perdê-las ao trocar de celular.</p></div><div class="backup-buttons"><button class="btn btn-outline" id="exportBackup">↓ Exportar backup</button><button class="btn btn-soft" id="importBackup">↑ Restaurar backup</button><input id="backupFile" type="file" accept="application/json,.json" hidden></div><p class="note">A restauração substitui o closet atual após sua confirmação.</p></div></div></div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <nav class="mobile-nav" aria-label="Navegação móvel"><button data-route="home" class="active"><span>⌂</span>Início</button><button data-route="closet"><span>▦</span>Closet</button><button data-route="looks"><span>✦</span>Looks</button><button data-route="week"><span>▤</span>Semana</button><button data-route="style"><span>♡</span>Estilo</button></nav>
+
+  <dialog id="pieceDialog" class="piece-dialog"><form id="pieceForm" class="piece-form"><div class="dialog-header"><div><div class="eyebrow">NO SEU CLOSET</div><h2 id="dialogTitle">Adicionar peça</h2></div><button type="button" class="close-dialog" id="closeDialog" aria-label="Fechar">×</button></div>
+    <div class="form-body"><label class="photo-uploader" for="piecePhoto" id="photoArea"><img id="photoPreview" alt="Prévia da roupa" hidden><span id="photoPlaceholder"><span class="upload-symbol">＋</span><strong>Toque para fotografar ou selecionar</strong><small>JPG, PNG, HEIC (quando suportado)</small></span><input id="piecePhoto" type="file" accept="image/*"></label><span class="hint">Dica: fotografe a peça inteira com fundo neutro e boa luz.</span>
+    <div class="ai-photo-controls"><button type="button" id="analyzePhoto" class="btn btn-outline">✳ Identificar peça com IA</button><span class="ai-photo-hint" id="aiPhotoHint">Opcional. Revise as sugestões antes de salvar.</span></div>
+    <div class="form-line"><label for="pieceName">Nome da peça <span class="required">*</span></label><input id="pieceName" type="text" maxlength="70" placeholder="Ex.: blazer caramelo" required></div>
+    <div class="two-fields"><div class="form-line"><label for="pieceGroup">Categoria <span class="required">*</span></label><select id="pieceGroup" required><option value="">Selecione...</option><option value="top">Parte de cima</option><option value="bottom">Parte de baixo</option><option value="layer">Terceira peça</option><option value="shoes">Calçado</option><option value="accessory">Acessório</option><option value="onepiece">Peça única</option></select></div><div class="form-line"><label for="pieceColor">Cor principal</label><select id="pieceColor"></select></div></div>
+    <div class="two-fields"><div class="form-line"><label for="piecePattern">Estampa</label><select id="piecePattern"><option value="">Não informado</option><option value="liso">Liso</option><option value="listrado">Listrado</option><option value="xadrez">Xadrez</option><option value="floral">Floral</option><option value="estampado">Estampado</option><option value="outro">Outro</option></select></div><div class="form-line"><label for="pieceFit">Modelagem</label><select id="pieceFit"><option value="">Não informado</option><option value="justo">Ajustada</option><option value="regular">Regular</option><option value="amplo">Ampla / oversized</option></select></div></div>
+    <div class="form-line"><label for="pieceFormality">Formalidade</label><select id="pieceFormality"><option value="">Não informado</option><option value="1">Muito casual</option><option value="2">Casual</option><option value="3">Versátil</option><option value="4">Social</option><option value="5">Muito formal</option></select></div>
+    <div class="field-group"><label>Em quais ocasiões você usaria?</label><div class="check-chips" id="pieceOccasions"></div></div>
+    <div class="field-group"><label>Clima adequado</label><div class="check-chips" id="pieceSeasons"></div></div>
+    <div class="field-group"><label>Estilo da peça</label><div class="check-chips" id="pieceStyles"></div></div>
+    <label class="available-check"><input id="pieceAvailable" type="checkbox" checked><span>Disponível para usar <small>(desmarque se estiver lavando ou indisponível)</small></span></label>
+    </div><div class="dialog-footer"><button type="button" class="btn btn-outline" id="cancelDialog">Cancelar</button><button type="submit" class="btn btn-dark" id="savePiece">Salvar peça</button></div></form></dialog>
+  <script src="./app.js" defer></script>
+</body>
+</html>
