@@ -62,3 +62,11 @@ python3 -m http.server 8080
 ```
 
 Abra `http://localhost:8080`. Todos os arquivos do app precisam ficar na mesma pasta: `index.html`, `app.js`, `styles.css`, `extra.css`, `sw.js`, `manifest.webmanifest` e os ícones.
+
+## VESTE 3.0 — Ateliê
+
+- Motor local com peças fixadas, troca individual, variedade de looks, feedback por motivo e preferências de silhueta/cobertura/cartela.
+- Cadastro em lote (fila de até 50 fotos para revisar individualmente), sugestão de detalhes por IA, alerta de foto idêntica, recorte local aproximado de fundos uniformes e preço opcional.
+- Ateliê: teste visual com ilustrações, consultora local por palavras-chave ou Gemini, calendário de uso, custo por uso, disponibilidade/lavanderia, compras em avaliação e checklist de mala.
+- Provador com foto selecionada na sessão e Gemini de imagem opcional (modelo configurável). A simulação não mede tamanho nem garante caimento. Consultoria por foto, orientação de cores e provador exigem chave e confirmação de envio ao Google; podem gerar custos. Nenhuma chave vai ao repositório. A conversa e fotos pessoais do ateliê ficam apenas na memória da sessão.
+- Login, sincronização e nuvem continuam fora desta versão. Faça backup antes de atualizar. O motor usa uma busca limitada e heurística; não garante a melhor combinação global.
