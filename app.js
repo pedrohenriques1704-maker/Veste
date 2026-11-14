@@ -194,7 +194,7 @@
   function addAvoidPair(){const a=$('avoidColorA').value,b=$('avoidColorB').value;if(a===b){notify('Escolha duas cores diferentes.');return}const k=[a,b].sort().join('|');state.settings.avoidPairs=Array.isArray(state.settings.avoidPairs)?state.settings.avoidPairs:[];if(!state.settings.avoidPairs.includes(k))state.settings.avoidPairs.push(k);saveLocal();state.resultsGenerated=false;state.settings.weekPlan=null;renderAdvanced();notify('Essa combinação de cores será evitada.')}
   function renderAdvanced(){if(!$('preferAccessories'))return;$('preferAccessories').checked=state.settings.preferAccessories!==false;$('repeatDays').value=String(state.settings.repeatDays??3);$('aiAutoAnalyze').checked=state.settings.aiAutoAnalyze!==false;
     $('avoidPairsList').innerHTML=(state.settings.avoidPairs||[]).length?state.settings.avoidPairs.map(pair=>`<span class="avoid-pill">${escapeHTML(pair.split('|').map(k=>COLORS[k]?.name||k).join(' + '))}<button data-remove-avoid="${escapeHTML(pair)}" aria-label="Remover combinação">×</button></span>`).join(''):'<small>Nenhuma combinação proibida.</small>';
-    $('aiStatus').textContent=state.aiKey?'IA conectada nesta sessão (chave não salva).':'IA desconectada. O app funciona sem chave.';}
+    keyVault.reflect();}
   function saveAdvanced(){state.settings.preferAccessories=$('preferAccessories').checked;state.settings.repeatDays=Number($('repeatDays').value)||0;state.settings.aiAutoAnalyze=$('aiAutoAnalyze').checked;saveLocal();state.settings.weekPlan=null;state.resultsGenerated=false;renderAll();notify('Regras atualizadas. Monte novos looks para aplicá-las.')}
   function weekdaysFromToday(){const now=new Date();now.setHours(12,0,0,0);return Array.from({length:7},(_,i)=>{const d=new Date(now);d.setDate(now.getDate()+i);return d})}
   function generateWeek(){const days=weekdaysFromToday(),used=new Map(),usedKeys=new Set();const plan=[];
@@ -208,8 +208,8 @@
     const fmt=new Intl.DateTimeFormat('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
     root.innerHTML=plan.days.map((day,i)=>{const items=day.ids.map(pieceById).filter(Boolean);const missing=items.length!==day.ids.length;if(!items.length||missing){return `<article class="week-card"><div class="week-date">${escapeHTML(fmt.format(new Date(day.date+'T12:00:00')))}</div><p>Não há combinação suficiente para este dia. Cadastre mais peças ou refaça o plano.</p></article>`}
       return `<article class="week-card"><div class="week-card-top"><div class="eyebrow">DIA ${String(i+1).padStart(2,'0')}</div><span>${day.temp!=null?Math.round(day.temp)+'°C':'Clima manual'}</span></div><div class="week-date">${escapeHTML(fmt.format(new Date(day.date+'T12:00:00')))}</div>${compactCollage(day.ids)}<div class="week-card-body"><h3>${escapeHTML(items[0]?.name||'Look')} ${items[1]?' + '+escapeHTML(items[1].name):''}</h3><p>${escapeHTML(OCCASIONS[day.occasion]||'Dia a dia')} · ${escapeHTML(SEASONS[day.weather]||'Ameno')}${day.rain>=50?' · ☂ chuva '+Math.round(day.rain)+'%':''}</p><small>${escapeHTML(items.map(p=>p.name).join(' · '))}</small><button class="btn btn-outline" data-week-wear="${day.date}" ${day.date>localISO(new Date())?'disabled title="Registre após usar"':''}>✓ Registrar uso</button></div></article>`}).join('')}
-  function connectAI(){const key=$('aiKey').value.trim(),model=$('aiModel').value.trim();if(!key){notify('Cole uma chave de API pessoal primeiro.');return}if(!/^[\w.-]+$/.test(model)){notify('Modelo inválido.');return}state.aiKey=key;state.aiModel=model;state.settings.aiAutoAnalyze=$('aiAutoAnalyze').checked;saveLocal();$('aiKey').value='';renderAdvanced();notify('Chave configurada nesta sessão. Teste analisando uma foto.')}
-  function disconnectAI(){state.aiKey=null;$('aiKey').value='';renderAdvanced();notify('IA desconectada. Nenhuma chave ficou salva no app.')}
+  function connectAI(){return keyVault.connect()}
+  function disconnectAI(){return keyVault.disconnect()}
   async function callGemini(parts){if(!state.aiKey)throw new Error('Conecte uma chave Gemini em Meu estilo.');const model=state.aiModel||'gemini-3.6-flash';const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
     let response;try{response=await fetchWithTimeout(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':state.aiKey},body:JSON.stringify({contents:[{role:'user',parts}],generationConfig:{responseMimeType:'application/json',temperature:0.25}})},45000)}catch(err){if(err.name==='AbortError')throw new Error('A IA demorou demais para responder.');throw new Error('Falha de rede ao conectar à IA. Verifique sua conexão e restrições da chave.')}
     const data=await response.json().catch(()=>({}));if(!response.ok){const code=response.status;throw new Error(code===401||code===403?'Chave sem acesso ao modelo. Verifique permissões e restrições.':code===429?'Limite de uso da API atingido. Tente depois.':(data.error?.message||'Erro da IA ('+code+').').slice(0,200))}
@@ -385,7 +385,7 @@
     await cloud.prepare();cloud.mount();
     if('serviceWorker' in navigator&&['http:','https:'].includes(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});
     if(!cloud.canEnter())return;
-    try{atelierV3();makeColorOptions();makeAvoidColors();$('weatherCity').value=state.settings.weatherCity||'Rio de Janeiro';renderAdvanced();createChecks('pieceOccasions',OCCASIONS);createChecks('pieceSeasons',SEASONS);createChecks('pieceStyles',STYLES);setupEvents();bulk.mount();state.db=await openDatabase();await refreshPieces();cloud.start()}catch(err){cloud.fail('Não foi possível iniciar o closet. Tente atualizar a página ou usar outro navegador. Seus dados não foram apagados.');console.error(err)}
+    try{await keyVault.restore();atelierV3();makeColorOptions();makeAvoidColors();$('weatherCity').value=state.settings.weatherCity||'Rio de Janeiro';renderAdvanced();createChecks('pieceOccasions',OCCASIONS);createChecks('pieceSeasons',SEASONS);createChecks('pieceStyles',STYLES);setupEvents();bulk.mount();state.db=await openDatabase();await refreshPieces();cloud.start()}catch(err){cloud.fail('Não foi possível iniciar o closet. Tente atualizar a página ou usar outro navegador. Seus dados não foram apagados.');console.error(err)}
   }
   function atelierV3(){
   const v=()=>{if(!state.settings.v3||typeof state.settings.v3!=='object'||Array.isArray(state.settings.v3))state.settings.v3={};const x=state.settings.v3;if(!x.ratings||typeof x.ratings!=='object'||Array.isArray(x.ratings))x.ratings={};if(!Array.isArray(x.feedback))x.feedback=[];if(!Array.isArray(x.wishes))x.wishes=[];if(x.trip&&(!Array.isArray(x.trip.ids)||!Array.isArray(x.trip.days)||!Array.isArray(x.trip.checked)))x.trip=null;return x};
@@ -681,7 +681,7 @@
             if(session?.expires_at)sessionExpiry=Number(session.expires_at)||0;
             if(event==='PASSWORD_RECOVERY'){recovery=true;setTimeout(render,0);return}
             if(ready&&['SIGNED_OUT','SIGNED_IN','TOKEN_REFRESHED'].includes(event)&&(session?.user?.id||null)!==kid()){
-              ready=false;clearTimeout(timer);render();const shell=document.querySelector('.app-shell'),nav=document.querySelector('.mobile-nav');if(shell)shell.inert=true;if(nav)nav.inert=true;
+              ready=false;keyVault.clearSession();clearTimeout(timer);render();const shell=document.querySelector('.app-shell'),nav=document.querySelector('.mobile-nav');if(shell)shell.inert=true;if(nav)nav.inert=true;
               if(session?.user?.id)try{put(marker,{id:session.user.id,email:session.user.email||''})}catch{}
               else del(marker);window.location.reload();
             }
@@ -854,7 +854,7 @@
   async function logout(){
     if(busy)return;
     if(!confirm(meta.dirty?'Há alterações ainda não sincronizadas. Sair e manter as alterações no cache desta conta?':'Sair desta conta? O cache separado permanecerá neste navegador.'))return;
-    busy=true;ready=false;render();clearTimeout(timer);
+    busy=true;ready=false;keyVault.clearSession();render();clearTimeout(timer);
     try{if(client){const {error}=await client.auth.signOut({scope:'local'});if(error)throw error}}
     catch{msg('Sessão local encerrada; não foi possível revogar a sessão no servidor.')}
     finally{del(authKey);del(marker);location.reload()}
@@ -862,7 +862,7 @@
   function mount(){
     if(setupDone)return;
     const panel=document.createElement('section');panel.id='cloudPanel';panel.className='panel cloud-panel';
-    panel.innerHTML='<div class="cloud-head"><div><div class="eyebrow">VESTE 4.2 · MINHA CONTA</div><h2>Seu closet, onde estiver.</h2></div><span id="cloudState" class="cloud-state">Modo local</span></div><div id="cloudGuest"><p>Entre na sua conta para organizar suas roupas, criar looks e descobrir seu estilo. Seu closet é privado.</p><div class="cloud-fields"><label>E-mail<input id="cloudEmail" type="email" autocomplete="email" placeholder="seu@email.com"></label><label>Senha<input id="cloudPassword" type="password" autocomplete="current-password" minlength="8" placeholder="Mínimo 8 caracteres"></label></div><div class="v3actions"><button class="btn btn-dark" id="cloudLogin">Entrar</button><button class="btn btn-outline" id="cloudSignup">Criar conta</button><button class="text-button" id="cloudReset">Esqueci a senha</button></div><p class="v3muted">Ao criar sua conta, confirme seu endereço de e-mail.</p></div><div id="cloudSigned" hidden><p id="cloudIdentity"></p><div class="v3actions"><button class="btn btn-dark" id="cloudSync">↻ Sincronizar agora</button><button class="btn btn-outline" id="cloudMigrate">Importar closet local</button><button class="text-button" id="cloudLogout">Sair</button></div><div id="cloudConflict" class="cloud-conflict" hidden><strong>Qual versão deve ser mantida?</strong><p>Exporte um backup antes de substituir qualquer versão. Uma escolha pode descartar alterações do outro dispositivo.</p><div class="v3actions"><button class="btn btn-outline" id="cloudKeepRemote">Usar versão da nuvem</button><button class="btn btn-outline" id="cloudKeepLocal">Enviar versão deste aparelho</button></div></div><p class="v3muted">Fotos privadas e dados separados por conta. Sair bloqueia o acesso ao aplicativo; os dados locais permanecem separados para o próximo login.</p></div><div id="cloudRecovery" hidden><label>Nova senha<input type="password" id="cloudNewPassword" autocomplete="new-password"></label><button class="btn btn-dark" id="cloudChangePassword">Atualizar senha</button></div><div id="cloudBoot" hidden><p id="cloudBootText">Preparando seu guarda-roupa…</p><div class="v3actions"><button class="btn btn-outline" id="cloudRetry">Atualizar página</button><button class="text-button" id="cloudExitBlocked">Sair da conta</button></div></div><p id="cloudMessage" class="cloud-message" aria-live="polite"></p>';
+    panel.innerHTML='<div class="cloud-head"><div><div class="eyebrow">VESTE 4.3 · MINHA CONTA</div><h2>Seu closet, onde estiver.</h2></div><span id="cloudState" class="cloud-state">Modo local</span></div><div id="cloudGuest"><p>Entre na sua conta para organizar suas roupas, criar looks e descobrir seu estilo. Seu closet é privado.</p><div class="cloud-fields"><label>E-mail<input id="cloudEmail" type="email" autocomplete="email" placeholder="seu@email.com"></label><label>Senha<input id="cloudPassword" type="password" autocomplete="current-password" minlength="8" placeholder="Mínimo 8 caracteres"></label></div><div class="v3actions"><button class="btn btn-dark" id="cloudLogin">Entrar</button><button class="btn btn-outline" id="cloudSignup">Criar conta</button><button class="text-button" id="cloudReset">Esqueci a senha</button></div><p class="v3muted">Ao criar sua conta, confirme seu endereço de e-mail.</p></div><div id="cloudSigned" hidden><p id="cloudIdentity"></p><div class="v3actions"><button class="btn btn-dark" id="cloudSync">↻ Sincronizar agora</button><button class="btn btn-outline" id="cloudMigrate">Importar closet local</button><button class="text-button" id="cloudLogout">Sair</button></div><div id="cloudConflict" class="cloud-conflict" hidden><strong>Qual versão deve ser mantida?</strong><p>Exporte um backup antes de substituir qualquer versão. Uma escolha pode descartar alterações do outro dispositivo.</p><div class="v3actions"><button class="btn btn-outline" id="cloudKeepRemote">Usar versão da nuvem</button><button class="btn btn-outline" id="cloudKeepLocal">Enviar versão deste aparelho</button></div></div><p class="v3muted">Fotos privadas e dados separados por conta. Sair bloqueia o acesso ao aplicativo; os dados locais permanecem separados para o próximo login.</p></div><div id="cloudRecovery" hidden><label>Nova senha<input type="password" id="cloudNewPassword" autocomplete="new-password"></label><button class="btn btn-dark" id="cloudChangePassword">Atualizar senha</button></div><div id="cloudBoot" hidden><p id="cloudBootText">Preparando seu guarda-roupa…</p><div class="v3actions"><button class="btn btn-outline" id="cloudRetry">Atualizar página</button><button class="text-button" id="cloudExitBlocked">Sair da conta</button></div></div><p id="cloudMessage" class="cloud-message" aria-live="polite"></p>';
     $('authMount').replaceChildren(panel);
     $('cloudRetry').onclick=()=>location.reload();$('cloudExitBlocked').onclick=logout;
     $('cloudPassword').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();authAction('login')}});
@@ -1058,6 +1058,69 @@
   return {mount,sanitize,collect,classifyFilename,resultMap,valid};
 }
   const bulk=bulkCloset();
+  function aiVault(){
+  let remembered=false,busy=false;
+  const scope=()=>{const id=STORAGE_KEY.match(/^veste-settings-v1:([0-9a-f-]{36})$/i)?.[1];if(!id||!cloud.canEnter())throw new Error('Entre na sua conta para conectar a IA.');return 'veste-ai-vault-v1:'+id};
+  const enc=s=>new TextEncoder().encode(s);
+  const validModel=s=>typeof s==='string'&&s.length<=150&&/^[\w.-]+$/.test(s);
+  const validKey=s=>typeof s==='string'&&s.length>=10&&s.length<=512&&!/\s/.test(s);
+  function db(){return new Promise((resolve,reject)=>{
+    if(!globalThis.indexedDB||!globalThis.crypto?.subtle){reject(new Error('Armazenamento protegido indisponível.'));return}
+    const r=indexedDB.open('veste-ai-credentials-v1',1);
+    r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains('credentials'))r.result.createObjectStore('credentials')};
+    r.onerror=()=>reject(r.error||new Error('Armazenamento indisponível.'));r.onsuccess=()=>resolve(r.result);
+  })}
+  async function op(mode,fn){const d=await db();try{return await new Promise((resolve,reject)=>{
+    const t=d.transaction('credentials',mode),store=t.objectStore('credentials');let result;
+    t.oncomplete=()=>resolve(result);t.onerror=()=>reject(t.error||new Error('Falha no armazenamento.'));t.onabort=()=>reject(t.error||new Error('Operação interrompida.'));
+    try{const req=fn(store);req.onsuccess=()=>result=req.result}catch(e){try{t.abort()}catch{}reject(e)}
+  })}finally{d.close()}}
+  async function seal(key,model,id){
+    if(!validKey(key)||!validModel(model))throw new Error('Configuração inválida.');
+    const k=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']),iv=crypto.getRandomValues(new Uint8Array(12));
+    const ciphertext=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:enc(id)},k,enc(JSON.stringify({key,model})));
+    return {v:1,k,iv,ciphertext};
+  }
+  async function unseal(r,id){
+    if(r?.v!==1||r.k?.extractable!==false||!(r.iv instanceof Uint8Array)||r.iv.length!==12||!(r.ciphertext instanceof ArrayBuffer))throw new Error('Configuração gravada inválida.');
+    const data=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:r.iv,additionalData:enc(id)},r.k,r.ciphertext)));
+    if(!validKey(data.key)||!validModel(data.model))throw new Error('Configuração gravada inválida.');return data;
+  }
+  async function restore(){
+    remembered=false;state.aiKey=null;
+    try{const id=scope(),r=await op('readonly',store=>store.get(id));if(!r)return;remembered=true;const data=await unseal(r,id);if(scope()!==id)return;state.aiKey=data.key;state.aiModel=data.model;}
+    catch{console.warn('VESTE: chave local indisponível.')}
+  }
+  async function connect(){
+    if(busy)return;
+    const input=$('aiKey'),checkbox=$('aiRemember'),key=input.value.trim()||state.aiKey,model=$('aiModel').value.trim();
+    if(!key){notify('Cole sua chave Gemini pessoal.');return}if(!validKey(key)||!validModel(model)){notify('Confira sua chave e o nome do modelo.');return}
+    let id;try{id=scope()}catch(e){notify(e.message);return}
+    busy=true;$('connectAI').disabled=true;$('disconnectAI').disabled=true;
+    try{
+      const keep=checkbox.checked;
+      if(keep&&!remembered&&!confirm('Lembrar a chave neste navegador? Ela ficará criptografada localmente, mas um script malicioso no site ou alguém com acesso ao dispositivo pode usá-la. Use apenas em aparelhos de confiança.')){checkbox.checked=false;return}
+      if(keep){const r=await seal(key,model,id);if(scope()!==id)throw new Error('Conta alterada.');await op('readwrite',store=>store.put(r,id))}
+      else if(remembered)await op('readwrite',store=>store.delete(id));
+      if(scope()!==id)return;
+      remembered=keep;state.aiKey=key;state.aiModel=model;state.settings.aiAutoAnalyze=$('aiAutoAnalyze').checked;saveLocal();input.value='';renderAdvanced();notify(keep?'Chave lembrada neste dispositivo.':'IA conectada apenas nesta sessão.');
+    }catch{notify('Não foi possível salvar a configuração. Tente sem marcar a opção de lembrar.')}
+    finally{busy=false;$('connectAI').disabled=false;$('disconnectAI').disabled=false}
+  }
+  async function disconnect(){
+    if(busy)return;busy=true;$('connectAI').disabled=true;$('disconnectAI').disabled=true;
+    try{if(remembered){const id=scope();await op('readwrite',store=>store.delete(id))}remembered=false;state.aiKey=null;$('aiKey').value='';renderAdvanced();notify('IA desconectada. Chave esquecida neste aparelho.')}
+    catch{state.aiKey=null;$('aiKey').value='';renderAdvanced();notify('IA desconectada, mas a chave gravada não pôde ser removida. Tente novamente.')}
+    finally{busy=false;$('connectAI').disabled=false;$('disconnectAI').disabled=false}
+  }
+  function reflect(){
+    if(!$('aiRemember'))return;$('aiRemember').checked=remembered;$('aiModel').value=state.aiModel;
+    $('aiStatus').textContent=state.aiKey?(remembered?'IA conectada · chave lembrada neste dispositivo.':'IA conectada somente nesta sessão.'):(remembered?'Chave gravada indisponível. Remova-a e conecte novamente.':'IA desconectada. O app funciona sem chave.');
+  }
+  function clearSession(){state.aiKey=null;remembered=false}
+  return {restore,connect,disconnect,reflect,clearSession,validModel,validKey,seal,unseal};
+}
+  const keyVault=aiVault();
   const cloud=makeCloud();
   init();
 })();

@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./extra.css">
-  <title>VESTE 4.2 — Seu guarda-roupa inteligente</title>
+  <title>VESTE 4.3 — Seu guarda-roupa inteligente</title>
 <style>.auth-locked .app-shell,.auth-locked .mobile-nav,.auth-locked dialog{display:none!important}.auth-landing[hidden]{display:none!important}html:not(.auth-locked) .auth-landing{display:none!important}</style>
 </head>
 <body>
@@ -103,8 +103,8 @@
           </div><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">04 / RECONHECIMENTO DE FOTO</div><h2>Conectar IA</h2><p>Use uma chave pessoal do Google Gemini para sugerir categoria, cor, estilo, modelagem e estampa a partir da foto.</p></div>
             <label class="field-label">Chave de API <input type="password" id="aiKey" placeholder="Cole sua chave aqui" autocomplete="off" spellcheck="false"></label><label class="field-label">Modelo <input type="text" id="aiModel" value="gemini-3.6-flash" autocomplete="off" spellcheck="false"></label>
             <label class="switch-line"><input type="checkbox" id="aiAutoAnalyze" checked> Analisar automaticamente novas fotos</label>
-            <button class="btn btn-dark" id="connectAI">Conectar nesta sessão</button><button class="text-button" id="disconnectAI">Desconectar</button><div class="ai-status" id="aiStatus" aria-live="polite">IA desconectada. O app funciona sem chave.</div>
-            <p class="note">A chave fica somente na memória desta aba e some ao fechar ou recarregar. Ao analisar uma foto, a imagem é enviada ao serviço do Google. Pode haver custos de API. Nunca publique sua chave no código do site.</p>
+            <label class="switch-line"><input type="checkbox" id="aiRemember"> Lembrar chave neste dispositivo</label><button class="btn btn-dark" id="connectAI">Conectar / salvar configuração</button><button class="text-button" id="disconnectAI">Desconectar e esquecer chave</button><div class="ai-status" id="aiStatus" aria-live="polite">IA desconectada. O app funciona sem chave.</div>
+            <p class="note">Sem marcar a opção, a chave fica apenas na sessão. Ao marcar, é gravada de forma criptografada no navegador, separada por conta, inclusive após sair e entrar novamente. Não é enviada ao Supabase, não entra no backup e não sincroniza com outros aparelhos. Isso não protege contra scripts maliciosos ou acesso ao dispositivo. Use apenas em aparelhos de confiança. Fotos analisadas são enviadas ao Google e pode haver custos da API.</p>
             <a class="simple-link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Obter chave no Google AI Studio ↗</a>
           </div><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">03 / SEUS FAVORITOS</div><h2>Looks salvos</h2></div><div id="favoritesList"></div></div><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">04 / SEUS DADOS</div><h2>Backup do closet</h2><p>Suas fotos não são enviadas para um servidor. Exporte um arquivo para não perdê-las ao trocar de celular.</p></div><div class="backup-buttons"><button class="btn btn-outline" id="exportBackup">↓ Exportar backup</button><button class="btn btn-soft" id="importBackup">↑ Restaurar backup</button><input id="backupFile" type="file" accept="application/json,.json" hidden></div><p class="note">A restauração substitui o closet atual após sua confirmação.</p></div></div></div>
         </section>
