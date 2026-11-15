@@ -86,3 +86,23 @@
 .v7-ai-guide{position:fixed;z-index:10050;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(560px,calc(100vw - 28px));padding:18px 46px 18px 18px;border:1px solid #d8c9bc;border-radius:16px;background:var(--paper);box-shadow:0 18px 55px rgba(41,35,30,.18);color:var(--ink)}
 .v7-ai-guide strong{display:block;font-size:1rem;margin-bottom:5px}.v7-ai-guide p{margin:0 0 8px;color:var(--ink)}.v7-ai-guide small{display:block;line-height:1.5;color:var(--muted)}.v7-ai-guide-close{position:absolute;right:12px;top:10px;border:0;background:transparent;color:var(--muted);font-size:25px;line-height:1}
 @media(max-width:720px){.v7-ai-guide{bottom:calc(88px + env(safe-area-inset-bottom))}}
+
+/* VESTE 7.0.3 — ícone oficial de IA */
+.ai-action,.ai-heading,.ai-status-mark,.ai-result{--ai-icon-color:var(--accent)}
+.ai-action::before,.ai-heading::before,.ai-status-mark::before,.ai-result::before{
+  content:"";display:inline-block;width:1.05em;height:1.05em;flex:0 0 1.05em;
+  background:var(--ai-icon-color);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 1.75c.7 5.53 2.72 7.55 8.25 8.25-5.53.7-7.55 2.72-8.25 8.25C11.3 12.72 9.28 10.7 3.75 10 9.28 9.3 11.3 7.28 12 1.75Zm7.1 13.15c.3 2.35 1.15 3.2 3.5 3.5-2.35.3-3.2 1.15-3.5 3.5-.3-2.35-1.15-3.2-3.5-3.5 2.35-.3 3.2-1.15 3.5-3.5Z'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 1.75c.7 5.53 2.72 7.55 8.25 8.25-5.53.7-7.55 2.72-8.25 8.25C11.3 12.72 9.28 10.7 3.75 10 9.28 9.3 11.3 7.28 12 1.75Zm7.1 13.15c.3 2.35 1.15 3.2 3.5 3.5-2.35.3-3.2 1.15-3.5 3.5-.3-2.35-1.15-3.2-3.5-3.5 2.35-.3 3.2-1.15 3.5-3.5Z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.ai-action{display:inline-flex!important;align-items:center;gap:.55em}
+.ai-action.btn-dark{--ai-icon-color:#dfaf91}
+.ai-action-inline{display:inline-flex!important}
+.ai-heading{display:flex!important;align-items:center;gap:.5em}
+.ai-heading::before{width:1.15em;height:1.15em}
+.ai-status-mark{display:flex;align-items:center;gap:.45em}
+.ai-status-mark::before{width:.9em;height:.9em}
+.ai-result{display:inline-flex;align-items:flex-start;gap:.35em}
+.ai-result::before{margin-top:.18em;width:.9em;height:.9em}
+.v7-ai-guide .ai-heading::before{width:1em;height:1em}
+@media(max-width:720px){.ai-action{gap:.45em}.ai-heading{gap:.42em}}

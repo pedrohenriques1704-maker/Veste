@@ -152,3 +152,8 @@ A configuração de Gemini permanece disponível, mas fica recolhida em **Recurs
 - Perfil → Recursos de IA ganha instruções em três passos para criar uma chave no Google AI Studio e conectá-la.
 - Ao tentar qualquer função de IA sem chave ativa, o app orienta o caminho Perfil → Recursos de IA; fora de diálogos, também abre o Perfil e expande a seção automaticamente.
 - O VESTE não cobra valor adicional pelo recurso. A chave pertence ao usuário e segue a faixa gratuita, limites e eventuais cobranças definidos pelo Google.
+
+
+### VESTE 7.0.3 — ícone oficial de IA
+
+O VESTE passa a usar um sparkle vetorial próprio para identificar recursos de IA. O desenho é aplicado por SVG mask/CSS, segue a cor terracota da interface e não depende de emoji. Ele aparece em ações, títulos, status e resultados de IA sem alterar a paleta do app.
