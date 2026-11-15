@@ -1524,7 +1524,7 @@
       remoteCatalog=rows.map(normalize).filter(Boolean);remoteState="ready";remoteChecked=Date.now();
       const d=data(),missing=[...new Set(d.votes.filter(v=>v.liked&&v.item?.source==="catalog"&&!remoteCatalog.some(p=>p.id===v.id)).map(v=>v.id))],extra=[];for(let i=0;i<missing.length;i+=100){const {data:offers,error}=await c.from("veste_catalog_products").select("id,name,description,affiliate_url,image_url,price,rrp_price,currency,group_key,merchant_category,brand,shop,color,audience,sizes,source_updated_at,in_stock,is_for_sale").in("id",missing.slice(i,i+100));if(error)break;extra.push(...(offers||[]).map(normalize).filter(Boolean))}const changed=shop.update(d,[...remoteCatalog,...extra],new Date().toISOString());if(changed||d.votes.some(v=>v.liked&&v.item?.source==="catalog"))saveLocal();
       if(remoteCatalog.length){source="catalog";current=null}
-    }catch(e){remoteError=String(e?.message||e||"Falha ao carregar catálogo.").slice(0,160);remoteState="error"}
+    }catch(e){support.diagnostic('catalog');remoteError=String(e?.message||e||"Falha ao carregar catálogo.").slice(0,160);remoteState="error"}
     render();
   }
   function options(){
@@ -1710,13 +1710,13 @@
     let choice=null,session=null,lastSent='',lastAttempt=0,activity=0;try{choice=localStorage.getItem(key);session=JSON.parse(sessionStorage.getItem(sessionKey)||'null')}catch{}
     if(!session||typeof session.id!=='string'||!Number.isFinite(session.at)||Date.now()-session.at>=idle)session=null;
     const setting=document.createElement('section');setting.className='panel';setting.id='usagePrivacy';
-    setting.innerHTML='<h3>Privacidade e melhorias</h3><p class="note">Se você permitir, o VESTE registra telas abertas e sessões de uso com identificadores pseudonimizados, além de códigos técnicos de falhas vinculados à conta. Não envia fotos, peças, textos de consultas, chaves ou mensagens de erro. Navegação: até 90 dias; diagnósticos: até 30 dias. Você pode mudar sua escolha neste navegador.</p><label class="note"><input type="checkbox" id="usageOptIn"> Permitir estatísticas de uso</label>';
+    setting.innerHTML='<h3>Privacidade e melhorias</h3><p class="note">Se você permitir, o VESTE registra telas abertas e sessões de uso com identificadores pseudonimizados por até 90 dias. Você também pode autorizar separadamente o envio de códigos técnicos de falhas ligados à conta por até 30 dias. Nenhum dos dois envia fotos, textos de consultas, chaves ou mensagens de erro. Você pode mudar suas escolhas neste navegador.</p><label class="note"><input type="checkbox" id="usageOptIn"> Permitir estatísticas de uso</label><label class="support-check"><input type="checkbox" id="supportDiagnosticConsent"> Permitir diagnósticos técnicos de falhas (opcional)</label>';
     $('view-style')?.append(setting);
     const checkbox=setting.querySelector('input'),banner=document.createElement('aside');
     banner.className='panel';banner.id='usageConsent';banner.style.margin='12px 0';
-    banner.innerHTML='<h3>Ajude a melhorar o VESTE</h3><p class="note">Deseja autorizar estatísticas básicas de navegação e códigos técnicos de falhas? É opcional e não inclui seu closet ou suas fotos.</p><div class="v3actions"><button type="button" class="btn" data-usage="yes">Permitir</button><button type="button" class="btn btn-outline" data-usage="no">Agora não</button></div>';
+    banner.innerHTML='<h3>Ajude a melhorar o VESTE</h3><p class="note">Deseja compartilhar estatísticas básicas de navegação? É opcional e não inclui seu closet ou suas fotos.</p><div class="v3actions"><button type="button" class="btn" data-usage="yes">Permitir</button><button type="button" class="btn btn-outline" data-usage="no">Agora não</button></div>';
     $('view-home')?.prepend(banner);
-    const allowed=()=>choice==='yes'&&cloud.canEnter()&&!document.documentElement.classList.contains('auth-locked')&&!document.documentElement.classList.contains('v74-profile-gate');support.setConsent(()=>choice==='yes'&&cloud.canEnter());
+    const allowed=()=>choice==='yes'&&cloud.canEnter()&&!document.documentElement.classList.contains('auth-locked')&&!document.documentElement.classList.contains('v74-profile-gate');const diagKey=STORAGE_KEY+':diagnostics-consent-v1',diag=$('supportDiagnosticConsent');try{diag.checked=localStorage.getItem(diagKey)==='yes'}catch{};diag.onchange=()=>{try{localStorage.setItem(diagKey,diag.checked?'yes':'no')}catch{diag.checked=false}};support.setConsent(()=>{try{return cloud.canEnter()&&localStorage.getItem(diagKey)==='yes'}catch{return false}});
     const persist=()=>{try{sessionStorage.setItem(sessionKey,JSON.stringify(session))}catch{}};
     const update=()=>{checkbox.checked=choice==='yes';banner.hidden=choice==='yes'||choice==='no'};
     function setChoice(next){choice=next;try{localStorage.setItem(key,next)}catch{};if(next!=='yes'){session=null;lastSent='';try{sessionStorage.removeItem(sessionKey)}catch{}}update();if(next==='yes')capture(state.view,true)}
