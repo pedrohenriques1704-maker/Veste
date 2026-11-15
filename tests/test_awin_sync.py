@@ -23,7 +23,7 @@ class TestFeed(unittest.TestCase):
     def test_no_external_tracking_url(self):
         self.assertIsNone(a.normalize(dict(item(),aw_deep_link="https://example.com"),118977,"Lauri","2026-11-15T14:00:00+00:00"))
     def test_bad_money(self):
-        self.assertIsNone(a.amount("NaN"));self.assertIsNone(a.amount("-3"));self.assertEqual(a.amount("-3",signed=True),-3)
+        self.assertEqual(a.amount(0),0);self.assertIsNone(a.amount("NaN"));self.assertIsNone(a.amount("-3"));self.assertEqual(a.amount("-3",signed=True),-3)
     def test_csv(self):
         self.assertEqual(a.rows(b'name,price\n"a,b",12\n')[0]["name"],"a,b")
     def test_transaction_attribution(self):
