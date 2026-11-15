@@ -160,7 +160,7 @@ def sync_catalog():
     ]
     selected={}; last_code="feed_list_no_approved_legacy"; confirmed=set()
     try:
-        params=urllib.parse.urlencode({"relationship":"joined","countryCode":"BR","accessToken":os.environ["AWIN_API_TOKEN"]})
+        params=urllib.parse.urlencode({"relationship":"joined","accessToken":os.environ["AWIN_API_TOKEN"]})
         programmes=json.loads(request_stage(f"https://api.awin.com/publishers/{publisher}/programmes?"+params,"programmes"))
         if isinstance(programmes,list): confirmed={int(x["id"]) for x in programmes if isinstance(x,dict) and str(x.get("id","")).isdigit()}&allowed
         print(f"programme membership confirmed={len(confirmed)} expected={len(allowed)}",flush=True)
@@ -171,7 +171,7 @@ def sync_catalog():
             if set(selected)==allowed: break
             last_code=stage+"_no_approved_legacy"
         except SyncIssue as e: last_code=stage+"_"+e.code
-    if set(selected)!=allowed: raise SyncIssue(last_code+("_joined" if confirmed==allowed else "_membership_unconfirmed"))
+    if set(selected)!=allowed: raise SyncIssue(last_code+("_joined_feed_not_ready" if confirmed==allowed else "_membership_unconfirmed"))
     total=0
     for mid,r in selected.items():
         feed=https(pick_field(r,"url","download_url","feed_url"),{"productdata.awin.com","ui.awin.com"})
