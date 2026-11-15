@@ -124,3 +124,7 @@ O provador FASHN e a geração de imagem Gemini foram descontinuados no aplicati
 ## VESTE 6.0 — Descobrir e radar
 
 33 estilos, filtros combináveis, swipe, curtir/pular e radar privado sincronizado nas configurações da conta. Importação manual CSV/JSON de catálogo autorizado (campos comuns Awin/Google, até 300 itens; BRL, HTTPS). 40 ideias de estilo sem preços e fotos inventados, links de busca em lojas. Filtros comerciais apenas no catálogo. Ranking heurístico por preferências, avaliações e compatibilidade potencial do closet. Fonte automática de lojas não conectada. Testar interface e sincronização no navegador após deploy.
+
+## VESTE 6.1 — compras inteligentes
+
+Combinações em colagens com o closet, semelhança por metadados, lacunas por categoria, filtros de compra consciente, modo explorar estilos e resumo das curtidas. Radar acompanha preços dos itens salvos (até 30 mudanças), alvo e alertas no app. Preços atualizados por reimportação do catálogo ou conferência manual; identidade por URL. Não há monitoramento automático da loja, push ou preço em tempo real. Testes de lógica simulados; validar iPhone e sincronização após deploy.
