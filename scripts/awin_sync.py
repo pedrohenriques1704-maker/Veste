@@ -74,17 +74,20 @@ def request_stage(url,code):
 def pick_field(row,*keys):
     return next((row[k] for k in keys if row.get(k) not in ("",None)), "")
 
-def select_feeds(data,allowed):
+def select_feeds(data,allowed,confirmed=None):
     parsed=rows(data)
     if not parsed: raise SyncIssue("feed_list_empty")
     if not any(k in parsed[0] for k in ("advertiser_id","merchant_id","merchantid")): raise SyncIssue("feed_list_missing_advertiser_column")
-    candidates={}
+    candidates={}; target_count=0; status_set=set(); format_set=set()
     for r in parsed:
         merchant=text(pick_field(r,"advertiser_id","merchant_id","merchantid"),20)
         if not merchant.isdigit() or int(merchant) not in allowed: continue
+        target_count+=1
         status=norm(pick_field(r,"membership_status","relationship","membership"))
-        if status not in ("active","joined","approved","yes"): continue
         fmt=norm(pick_field(r,"datafeed_format","data_feed_format","feed_format","format"))
+        status_set.add(status if status in ("active","joined","approved","yes","pending","suspended","rejected","notjoined","not joined","inactive","") else "other")
+        format_set.add(fmt if fmt in ("awin","legacy","standard","google","enhanced","") else "other")
+        if status not in ("active","joined","approved","yes") and not (confirmed and int(merchant) in confirmed and status not in ("suspended","rejected","inactive","pending")): continue
         if fmt not in ("awin","legacy","standard",""): continue
         language=norm(pick_field(r,"language","feed_language"))
         region=norm(pick_field(r,"primary_region","region"))
@@ -95,6 +98,7 @@ def select_feeds(data,allowed):
         pool=preferred or options
         if len(pool)!=1: raise SyncIssue("multiple_legacy_feeds_for_"+str(mid))
         chosen[mid]=pool[0][0]
+    print(f"feed_list rows={len(parsed)} target_rows={target_count} status={sorted(status_set)} formats={sorted(format_set)} chosen={len(chosen)}",flush=True)
     return chosen
 
 GROUPS=[("onepiece",r"\b(vestido|macacao|macaquinho|dress)\b"),("shoes",r"\b(tenis|sapato|bota|coturno|mocassim|sandalia|chinelo|sapatilha|chuteira|sneaker)\b"),("accessory",r"\b(bolsa|mochila|cinto|bone|oculos|colar|brinco|relogio|meia|viseira)\b"),("layer",r"\b(jaqueta|blazer|casaco|colete|cardigan|parka|sobretudo)\b"),("bottom",r"\b(calca|shorts?|bermuda|saia|legging|jogger)\b"),("top",r"\b(camisa|camiseta|regata|blusa|polo|moletom|cropped|sueter|top)\b")]
@@ -154,14 +158,20 @@ def sync_catalog():
         # Awin documents this endpoint as the fallback for legacy-only lists.
         ("legacy_list",f"https://productdata.awin.com/datafeed/list/apikey/{encoded}")
     ]
-    selected={}; last_code="feed_list_no_approved_legacy"
+    selected={}; last_code="feed_list_no_approved_legacy"; confirmed=set()
+    try:
+        params=urllib.parse.urlencode({"relationship":"joined","countryCode":"BR","accessToken":os.environ["AWIN_API_TOKEN"]})
+        programmes=json.loads(request_stage(f"https://api.awin.com/publishers/{publisher}/programmes?"+params,"programmes"))
+        if isinstance(programmes,list): confirmed={int(x["id"]) for x in programmes if isinstance(x,dict) and str(x.get("id","")).isdigit()}&allowed
+        print(f"programme membership confirmed={len(confirmed)} expected={len(allowed)}",flush=True)
+    except Exception: print("programme membership check unavailable",flush=True)
     for stage,url in urls:
         try:
-            selected=select_feeds(request_stage(url,stage),allowed)
+            selected=select_feeds(request_stage(url,stage),allowed,confirmed)
             if set(selected)==allowed: break
             last_code=stage+"_no_approved_legacy"
         except SyncIssue as e: last_code=stage+"_"+e.code
-    if set(selected)!=allowed: raise SyncIssue(last_code)
+    if set(selected)!=allowed: raise SyncIssue(last_code+("_joined" if confirmed==allowed else "_membership_unconfirmed"))
     total=0
     for mid,r in selected.items():
         feed=https(pick_field(r,"url","download_url","feed_url"),{"productdata.awin.com","ui.awin.com"})
