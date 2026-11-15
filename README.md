@@ -116,3 +116,7 @@ Trata cota gratuita zerada, demais limites, permissões e modelos indisponíveis
 ## VESTE 4.8 — FASHN no computador
 
 Use um ambiente FASHN VTON 1.5 já testado. Baixe `veste_worker.py` para a pasta fashn-vton-1.5 e rode ` .\.venv\Scripts\python.exe veste_worker.py` no PowerShell. Entre com a mesma conta VESTE do dispositivo. O programa não abre porta de rede; consulta uma fila autenticada a cada 12 segundos. Fotos temporárias e resultado usam bucket privado por usuário. O worker tenta excluir entradas após concluir; resultado permanece até exclusão pelo usuário. Um pedido ativo por conta; só uma instância de worker recomendada. Cancelamento apenas na fila; pedidos interrompidos são marcados após 30 minutos quando o worker volta. Suporta tops, bottoms e one-pieces; até três etapas sequenciais, sem calçados/acessórios. FASHN pode alterar detalhes das roupas anteriores. Nenhum faturamento foi ativado. Testar no PC e no navegador após deploy.
+
+## VESTE 5.0 — retirada do provador virtual
+
+O provador FASHN e a geração de imagem Gemini foram descontinuados no aplicativo por falta de fidelidade às peças e às proporções. A consultora, classificação de fotos, looks, closet, calendário e outros recursos continuam. O programa local não é mais necessário; encerre com Ctrl+C. A fila e as fotos históricas não foram apagadas nesta atualização. Instruções antigas de provador acima são apenas histórico, não devem ser seguidas na versão atual.
