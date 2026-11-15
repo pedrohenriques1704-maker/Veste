@@ -399,7 +399,7 @@
     await cloud.prepare();cloud.mount();
     if('serviceWorker' in navigator&&['http:','https:'].includes(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});
     if(!cloud.canEnter())return;
-    try{await keyVault.restore();atelierV3();discovery.mount();experienceV7();makeColorOptions();makeAvoidColors();$('weatherCity').value=state.settings.weatherCity||'Rio de Janeiro';renderAdvanced();createChecks('pieceOccasions',OCCASIONS);createChecks('pieceSeasons',SEASONS);createChecks('pieceStyles',STYLES);setupEvents();bulk.mount();duplicates.mount();state.db=await openDatabase();await refreshPieces();cloud.start()}catch(err){cloud.fail('Não foi possível iniciar o closet. Tente atualizar a página ou usar outro navegador. Seus dados não foram apagados.');console.error(err)}
+    try{await keyVault.restore();atelierV3();discovery.mount();experienceV7();makeColorOptions();makeAvoidColors();$('weatherCity').value=state.settings.weatherCity||'Rio de Janeiro';renderAdvanced();createChecks('pieceOccasions',OCCASIONS);createChecks('pieceSeasons',SEASONS);createChecks('pieceStyles',STYLES);setupEvents();bulk.mount();duplicates.mount();state.db=await openDatabase();await refreshPieces();cloud.start();try{mountUsageAnalytics()}catch{} }catch(err){cloud.fail('Não foi possível iniciar o closet. Tente atualizar a página ou usar outro navegador. Seus dados não foram apagados.');console.error(err)}
   }
   let shoppingProfile=()=>({learned:{},observed:0});
   function atelierV3(){
@@ -1695,6 +1695,41 @@
       const finished=done.filter(Boolean).length;
       const heading=document.querySelector('.v7-story-heading p');if(heading)heading.textContent=finished===5?'Seu fluxo principal já está completo. Continue usando o VESTE e ele aprende com suas escolhas.':finished+' de 5 etapas já começaram. A próxima ação útil está logo abaixo.';
     }
+  }
+
+
+  // First-party usage metrics: no personal closet data, no events before opt-in.
+  function mountUsageAnalytics(){
+    if(!globalThis.crypto?.randomUUID||!cloud.canEnter())return;
+    const routes=new Set(['home','closet','looks','week','discover','style']),key=STORAGE_KEY+':analytics-consent-v1',sessionKey=STORAGE_KEY+':analytics-session-v1',idle=30*60*1000;
+    let choice=null,session=null,lastSent='',lastAttempt=0,activity=0;try{choice=localStorage.getItem(key);session=JSON.parse(sessionStorage.getItem(sessionKey)||'null')}catch{}
+    if(!session||typeof session.id!=='string'||!Number.isFinite(session.at)||Date.now()-session.at>=idle)session=null;
+    const setting=document.createElement('section');setting.className='panel';setting.id='usagePrivacy';
+    setting.innerHTML='<h3>Privacidade e melhorias</h3><p class="note">Se você permitir, o VESTE registra apenas quais telas são abertas e sessões de uso, com identificadores pseudonimizados. Não envia fotos, peças ou conteúdo das suas consultas. Os registros são mantidos por até 90 dias. Você pode mudar sua escolha neste navegador a qualquer momento.</p><label class="note"><input type="checkbox" id="usageOptIn"> Permitir estatísticas de uso</label>';
+    $('view-style')?.append(setting);
+    const checkbox=setting.querySelector('input'),banner=document.createElement('aside');
+    banner.className='panel';banner.id='usageConsent';banner.style.margin='12px 0';
+    banner.innerHTML='<h3>Ajude a melhorar o VESTE</h3><p class="note">Deseja compartilhar estatísticas básicas de navegação? Isso é opcional e não inclui seu closet ou suas fotos.</p><div class="v3actions"><button type="button" class="btn" data-usage="yes">Permitir</button><button type="button" class="btn btn-outline" data-usage="no">Agora não</button></div>';
+    $('view-home')?.prepend(banner);
+    const allowed=()=>choice==='yes'&&cloud.canEnter()&&!document.documentElement.classList.contains('auth-locked');
+    const persist=()=>{try{sessionStorage.setItem(sessionKey,JSON.stringify(session))}catch{}};
+    const update=()=>{checkbox.checked=choice==='yes';banner.hidden=choice==='yes'||choice==='no'};
+    function setChoice(next){choice=next;try{localStorage.setItem(key,next)}catch{};if(next!=='yes'){session=null;lastSent='';try{sessionStorage.removeItem(sessionKey)}catch{}}update();if(next==='yes')capture(state.view,true)}
+    checkbox.addEventListener('change',()=>setChoice(checkbox.checked?'yes':'no'));banner.addEventListener('click',e=>{const button=e.target.closest('[data-usage]');if(button)setChoice(button.dataset.usage)});
+    window.addEventListener('storage',e=>{if(e.key===key){choice=e.newValue;update();if(choice!=='yes'){session=null;lastSent='';try{sessionStorage.removeItem(sessionKey)}catch{}}}});
+    async function capture(route,force=false){
+      if(!allowed()||!routes.has(route)||document.visibilityState!=='visible'||!navigator.onLine)return;
+      const now=Date.now();if(!session||now-session.at>=idle){session={id:crypto.randomUUID(),at:now};lastSent='';force=true}
+      session.at=now;persist();if(!force&&lastSent===route)return;if(now-lastAttempt<250&&lastSent===route)return;
+      lastSent=route;lastAttempt=now;const sid=session.id,vid=crypto.randomUUID();
+      try{const c=await cloud.catalogClient();if(!allowed())return;const {error,data}=await c.rpc('veste_record_page_view',{page_key:route,session_id:sid,view_id:vid});if((error||data!==true)&&lastSent===route&&lastAttempt===now)lastSent=''}catch{if(lastSent===route&&lastAttempt===now)lastSent=''}
+    }
+    const oldNavigate=navigate;navigate=function(route){const before=state.view;const result=oldNavigate(route);if(state.view!==before)capture(state.view);return result};
+    const resume=()=>{if(document.visibilityState!=='visible'||!allowed())return;const now=Date.now();if(!session||now-session.at>=idle)capture(state.view,true);else if(!lastSent)capture(state.view)};
+    document.addEventListener('visibilitychange',resume);window.addEventListener('online',resume);
+    function touch(){if(!allowed()||document.visibilityState!=='visible')return;const now=Date.now();if(now-activity<5000)return;activity=now;if(!session||now-session.at>=idle||!lastSent)capture(state.view,true);else{session.at=now;persist()}}
+    document.addEventListener('pointerdown',touch,{passive:true});document.addEventListener('keydown',touch,{passive:true});
+    update();capture(state.view,true);
   }
 
   const discovery=discoveryFeature();
