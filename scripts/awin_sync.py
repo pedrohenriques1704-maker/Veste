@@ -124,13 +124,17 @@ def sync_transactions():
     if not isinstance(data,list): raise ValueError("Unexpected transaction response")
     records=[]
     for x in data:
+        refs=x.get("clickRefs") or {}
+        ref=x.get("clickRef") or (refs.get("clickRef") if isinstance(refs,dict) else "")
+        # Ignore other publisher traffic; never import customer/order identifiers.
+        if ref!="veste-app": continue
         sale=x.get("saleAmount") or {}; commission=x.get("commissionAmount") or {}
         if not isinstance(sale,dict) or not isinstance(commission,dict): raise ValueError("Unexpected monetary format")
         cur=text(commission.get("currency"),3)
         if not cur or cur!=text(sale.get("currency"),3): raise ValueError("Currency mismatch")
         sv=amount(sale.get("amount"),signed=True); cv=amount(commission.get("amount"),signed=True)
         if sv is None or cv is None or not x.get("id") or not x.get("transactionDate"): raise ValueError("Invalid transaction")
-        records.append(dict(id=str(x["id"]),merchant_id=x.get("advertiserId"),transaction_at=x["transactionDate"],status=text(x.get("commissionStatus"),30),currency=cur,sale_amount=sv,commission_amount=cv))
+        records.append(dict(id=str(x["id"]),merchant_id=x.get("advertiserId"),transaction_at=x["transactionDate"],status=text(x.get("commissionStatus"),30),currency=cur,sale_amount=sv,commission_amount=cv,attributed=True,transaction_type=text(x.get("type"),60)))
     for i in range(0,len(records),200): db("rpc/veste_commerce_transactions_import",{"records":records[i:i+200]})
     log("transactions",True,len(records),"30-day Awin publisher report; grouped by status/currency")
 def main():
