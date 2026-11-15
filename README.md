@@ -120,3 +120,7 @@ Use um ambiente FASHN VTON 1.5 já testado. Baixe `veste_worker.py` para a pasta
 ## VESTE 5.0 — retirada do provador virtual
 
 O provador FASHN e a geração de imagem Gemini foram descontinuados no aplicativo por falta de fidelidade às peças e às proporções. A consultora, classificação de fotos, looks, closet, calendário e outros recursos continuam. O programa local não é mais necessário; encerre com Ctrl+C. A fila e as fotos históricas não foram apagadas nesta atualização. Instruções antigas de provador acima são apenas histórico, não devem ser seguidas na versão atual.
+
+## VESTE 6.0 — Descobrir e radar
+
+33 estilos, filtros combináveis, swipe, curtir/pular e radar privado sincronizado nas configurações da conta. Importação manual CSV/JSON de catálogo autorizado (campos comuns Awin/Google, até 300 itens; BRL, HTTPS). 40 ideias de estilo sem preços e fotos inventados, links de busca em lojas. Filtros comerciais apenas no catálogo. Ranking heurístico por preferências, avaliações e compatibilidade potencial do closet. Fonte automática de lojas não conectada. Testar interface e sincronização no navegador após deploy.
