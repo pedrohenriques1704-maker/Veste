@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./extra.css">
-  <title>VESTE 6.2 — Seu guarda-roupa inteligente</title>
+  <title>VESTE 7.0 — Seu guarda-roupa inteligente</title>
 <style>.auth-locked .app-shell,.auth-locked .mobile-nav,.auth-locked dialog{display:none!important}.auth-landing[hidden]{display:none!important}html:not(.auth-locked) .auth-landing{display:none!important}</style>
 </head>
 <body>
@@ -22,11 +22,11 @@
       <p class="sidebar-caption">Seu estilo, suas peças.</p>
       <div class="nav-label">SEU ESPAÇO</div>
       <nav class="nav-list" aria-label="Navegação principal">
-        <button class="nav-btn active" data-route="home"><span class="nav-icon">⌂</span> Início</button>
+        <button class="nav-btn active" data-route="home"><span class="nav-icon">⌂</span> Hoje</button>
         <button class="nav-btn" data-route="closet"><span class="nav-icon">▦</span> Meu closet</button>
-        <button class="nav-btn" data-route="looks"><span class="nav-icon">✦</span> Criar looks</button>
-        <button class="nav-btn" data-route="week"><span class="nav-icon">▤</span> Minha semana</button>
-        <button class="nav-btn" data-route="style"><span class="nav-icon">♡</span> Meu estilo</button>
+        <button class="nav-btn" data-route="looks"><span class="nav-icon">✦</span> Looks</button>
+        <button class="nav-btn" data-route="week"><span class="nav-icon">▤</span> Planejar</button>
+        <button class="nav-btn" data-route="style"><span class="nav-icon">♡</span> Perfil</button>
       </nav>
       <div class="sidebar-bottom"><span class="little-dot"></span> Seu closet local ou sincronizado por conta.<br><span class="small-muted">Gerencie sua conta em Início.</span></div>
     </aside>
@@ -35,7 +35,7 @@
       <header class="topbar">
         <div class="mobile-brand"><span class="brand-mark">✳</span> VESTE<span class="brand-dot">.</span></div>
         <div class="topbar-label" id="topbarTitle">SEU ESPAÇO</div>
-        <button class="add-inline" type="button" data-action="add">+ Adicionar peça</button>
+        <div class="topbar-actions"><button class="topbar-profile" type="button" data-route="style" aria-label="Abrir perfil">♡ Perfil</button><button class="add-inline" type="button" data-action="add">+ Adicionar peça</button></div>
       </header>
       <main class="main-content">
         <section id="view-home" class="view active" aria-labelledby="homeTitle">
@@ -61,11 +61,13 @@
             <div class="today-controls"><label class="city-label">Sua cidade <input id="weatherCity" value="Rio de Janeiro" placeholder="Ex.: Rio de Janeiro" autocomplete="address-level2"></label><button class="btn btn-outline" id="getForecast">↻ Ver previsão</button><button class="btn btn-dark" id="todayGenerate">✦ Montar look de hoje</button></div>
             <div id="todayLook" class="today-result"></div><p class="subnote">Previsão online mediante consulta. Você pode continuar usando o app sem clima automático.</p>
           </div>
-          <div class="section-heading"><div><div class="eyebrow subtle">COMECE POR AQUI</div><h2>Um closet com a sua cara</h2></div></div>
-          <div class="steps-grid">
-            <button class="step-card" data-action="add"><div class="step-icon">01 <span>↗</span></div><h3>Fotografe suas peças</h3><p>Cadastre roupas, sapatos e acessórios com foto, cor e categoria.</p></button>
-            <button class="step-card" data-route="style"><div class="step-icon">02 <span>↗</span></div><h3>Ensine seu gosto</h3><p>Escolha os estilos que gosta. Dê feedback nas sugestões.</p></button>
-            <button class="step-card" data-route="looks"><div class="step-icon">03 <span>↗</span></div><h3>Descubra combinações</h3><p>Crie looks por ocasião e temperatura, sem precisar comprar nada.</p></button>
+          <div class="section-heading v7-story-heading"><div><div class="eyebrow subtle">COMO O VESTE FUNCIONA</div><h2>Do seu closet para decisões melhores.</h2><p>Você não precisa descobrir o app sozinho. Siga este caminho e o VESTE fica mais útil a cada etapa.</p></div></div>
+          <div class="steps-grid v7-story" id="v7Story">
+            <button class="step-card" data-action="add"><div class="step-icon">01 <span>↗</span></div><h3>Monte seu closet</h3><p>Adicione suas roupas por foto. Comece com parte de cima, parte de baixo e calçado.</p></button>
+            <button class="step-card" data-route="style"><div class="step-icon">02 <span>↗</span></div><h3>Conte seu estilo</h3><p>Avalie referências visuais e ajuste preferências para o app entender o que faz sentido para você.</p></button>
+            <button class="step-card" data-route="looks"><div class="step-icon">03 <span>↗</span></div><h3>Monte looks</h3><p>Escolha a ocasião, fixe uma peça se quiser e receba combinações com o que você já possui.</p></button>
+            <button class="step-card" data-route="week"><div class="step-icon">04 <span>↗</span></div><h3>Planeje</h3><p>Organize a semana, acompanhe o uso do closet e monte malas sem esquecer o que você já tem.</p></button>
+            <button class="step-card" data-route="discover"><div class="step-icon">05 <span>↗</span></div><h3>Descubra com intenção</h3><p>Explore peças novas comparando com seu estilo e com as lacunas reais do seu guarda-roupa.</p></button>
           </div>
           <div id="recentFavorites" class="recent-favorites"></div>
         </section>
@@ -86,13 +88,13 @@
         </section>
 
         <section id="view-week" class="view" aria-labelledby="weekTitle">
-          <div class="page-heading"><div><div class="eyebrow">SETE DIAS, SEU GUARDA-ROUPA</div><h1 id="weekTitle">Minha semana<span class="period">.</span></h1><p>Planeje looks variados e aproveite peças que você quase não usa.</p></div></div>
+          <div class="page-heading"><div><div class="eyebrow">ORGANIZE ANTES DE PRECISAR</div><h1 id="weekTitle">Planejar<span class="period">.</span></h1><p>Semana, histórico de uso e mala em um só lugar. Planeje com o que você já tem.</p></div></div>
           <div class="week-config"><label>Segunda a sexta <select id="weekdayOccasion"><option value="trabalho">Trabalho</option><option value="casual">Dia a dia</option><option value="evento">Evento</option><option value="noite">Sair à noite</option><option value="esporte">Esporte</option></select></label><label>Sábado e domingo <select id="weekendOccasion"><option value="casual">Dia a dia</option><option value="trabalho">Trabalho</option><option value="evento">Evento</option><option value="noite">Sair à noite</option><option value="esporte">Esporte</option></select></label><button class="btn btn-dark" id="generateWeek">✦ Planejar 7 dias</button></div>
           <p class="week-hint" id="weekHint">O planejamento considera disponibilidade, estilo, repetição e previsão do tempo quando consultada.</p>
           <div class="week-grid" id="weekGrid"></div>
         </section>
         <section id="view-style" class="view" aria-labelledby="styleTitle">
-          <div class="page-heading"><div><div class="eyebrow">MODA NÃO É REGRA, É PREFERÊNCIA</div><h1 id="styleTitle">Meu estilo<span class="period">.</span></h1><p>Quanto mais você define o que gosta, mais relevantes ficam suas combinações.</p></div></div>
+          <div class="page-heading"><div><div class="eyebrow">O VESTE APRENDE COM VOCÊ</div><h1 id="styleTitle">Seu perfil<span class="period">.</span></h1><p>Defina seu gosto, preferências e regras pessoais. Configurações técnicas ficam separadas do uso cotidiano.</p></div></div>
           <div class="settings-layout"><div class="settings-main"><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">01 / SEU PERFIL</div><h2>Como você gosta de se vestir?</h2><p>Você pode marcar mais de um estilo.</p></div><div class="style-options" id="styleOptions"></div><button class="btn btn-dark" id="savePrefs">Salvar preferências</button></div>
           <div class="panel"><div class="panel-heading"><div class="eyebrow subtle">02 / SEU FEEDBACK</div><h2>O app aprende com você</h2><p>Use “Amei” e “Não usaria” nos looks gerados. As próximas sugestões levam isso em conta.</p></div><div class="feedback-stats" id="feedbackStats"></div><button class="text-button" id="resetFeedback">Limpar feedback de looks</button></div></div>
           <div class="settings-side"><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">03 / REGRAS PESSOAIS</div><h2>Suas escolhas</h2><p>Defina o que o VESTE deve evitar ou priorizar.</p></div>
@@ -106,12 +108,12 @@
             <label class="switch-line"><input type="checkbox" id="aiRemember"> Lembrar chave neste dispositivo</label><button class="btn btn-dark" id="connectAI">Conectar / salvar configuração</button><button class="text-button" id="disconnectAI">Desconectar e esquecer chave</button><div class="ai-status" id="aiStatus" aria-live="polite">IA desconectada. O app funciona sem chave.</div>
             <p class="note">Sem marcar a opção, a chave fica apenas na sessão. Ao marcar, é gravada de forma criptografada no navegador, separada por conta, inclusive após sair e entrar novamente. Não é enviada ao Supabase, não entra no backup e não sincroniza com outros aparelhos. Isso não protege contra scripts maliciosos ou acesso ao dispositivo. Use apenas em aparelhos de confiança. Fotos analisadas são enviadas ao Google e pode haver custos da API.</p>
             <a class="simple-link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Obter chave no Google AI Studio ↗</a>
-          </div><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">03 / SEUS FAVORITOS</div><h2>Looks salvos</h2></div><div id="favoritesList"></div></div><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">04 / SEUS DADOS</div><h2>Backup do closet</h2><p>Suas fotos não são enviadas para um servidor. Exporte um arquivo para não perdê-las ao trocar de celular.</p></div><div class="backup-buttons"><button class="btn btn-outline" id="exportBackup">↓ Exportar backup</button><button class="btn btn-soft" id="importBackup">↑ Restaurar backup</button><input id="backupFile" type="file" accept="application/json,.json" hidden></div><p class="note">A restauração substitui o closet atual após sua confirmação.</p></div></div></div>
+          </div><div class="panel"><div class="panel-heading"><div class="eyebrow subtle">03 / SEUS FAVORITOS</div><h2>Looks salvos</h2></div><div id="favoritesList"></div></div></div></div></div>
         </section>
       </main>
     </div>
   </div>
-  <nav class="mobile-nav" aria-label="Navegação móvel"><button data-route="home" class="active"><span>⌂</span>Início</button><button data-route="closet"><span>▦</span>Closet</button><button data-route="looks"><span>✦</span>Looks</button><button data-route="week"><span>▤</span>Semana</button><button data-route="style"><span>♡</span>Estilo</button></nav>
+  <nav class="mobile-nav" aria-label="Navegação móvel"><button data-route="home" class="active"><span>⌂</span>Hoje</button><button data-route="closet"><span>▦</span>Closet</button><button data-route="looks"><span>✦</span>Looks</button><button data-route="week"><span>▤</span>Planejar</button></nav>
 
   <dialog id="pieceDialog" class="piece-dialog"><form id="pieceForm" class="piece-form"><div class="dialog-header"><div><div class="eyebrow">NO SEU CLOSET</div><h2 id="dialogTitle">Adicionar peça</h2></div><button type="button" class="close-dialog" id="closeDialog" aria-label="Fechar">×</button></div>
     <div class="form-body"><label class="photo-uploader" for="piecePhoto" id="photoArea"><img id="photoPreview" alt="Prévia da roupa" hidden><span id="photoPlaceholder"><span class="upload-symbol">＋</span><strong>Toque para fotografar ou selecionar</strong><small>JPG, PNG, HEIC (quando suportado)</small></span><input id="piecePhoto" type="file" accept="image/*"></label><span class="hint">Dica: fotografe a peça inteira com fundo neutro e boa luz.</span>

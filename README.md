@@ -132,3 +132,14 @@ Combinações em colagens com o closet, semelhança por metadados, lacunas por c
 ## VESTE 6.2 — catálogo Awin no Supabase
 
 O Descobrir passa a carregar o catálogo compartilhado `veste_catalog_products` somente para usuários autenticados, sem copiar centenas de produtos para as configurações pessoais. A primeira carga real consolidou 2.557 variantes da Lauri Esporte em 743 produtos únicos (tamanhos agregados), com links afiliados, preços, marca, cor, estoque e imagens. O cliente pagina até 3.000 produtos e mantém importação manual apenas como fallback. A atualização automática da Awin ainda depende de cadastrar uma nova Product Feed key como segredo do backend; a chave vista em screenshots não deve ser reutilizada em produção.
+
+
+## VESTE 7.0 — experiência reorganizada
+
+A navegação principal foi reorganizada por intenção do usuário: **Hoje → Closet → Looks → Planejar → Descobrir**, com **Perfil** separado das tarefas cotidianas. O antigo Ateliê deixa de ser uma área genérica: consultora vai para Looks; calendário, uso e mala vão para Planejar; perfil visual vai para Perfil. No mobile, Perfil fica no topo para preservar cinco ações principais na barra inferior.
+
+A Home passa a explicar o fluxo do produto em cinco etapas e mostra progresso de uso. Imports manuais de peças em JSON, restauração por JSON e import de catálogo deixam de aparecer para usuários comuns. O catálogo continua sendo administrado no backend e carregado automaticamente no Descobrir.
+
+O teste visual de estilo agora usa dez referências fotográficas reais, com descrição curta para ajudar a diferenciar Casual chic, Clássico, Minimalista, Street, Alternativo, Criativo, Romântico, Esportivo, Casual e Noturno. As imagens escolhidas são referências do Unsplash e cada card mantém crédito e link para a página da fotografia.
+
+A configuração de Gemini permanece disponível, mas fica recolhida em **Recursos experimentais de IA**, fora do fluxo principal.
