@@ -1,6 +1,7 @@
 (() => {
 "use strict";
 const el=id=>document.getElementById(id), msg=t=>el("message").textContent=t;
+if(!window.supabase?.createClient){msg("Biblioteca de autenticação indisponível. Recarregue a página.");el("refresh").onclick=()=>location.reload();return}
 const client=window.supabase.createClient("https://zodyzmeeossstkiwanqi.supabase.co","sb_publishable_26b9DoYuHezMJ06urxRk9w_qCE_TtlU",{auth:{storageKey:"veste-supabase-auth-v1",persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
 const money=(n,c)=>{try{return Number(n).toLocaleString("pt-BR",{style:"currency",currency:c})}catch{return String(n)+" "+c}};
 const date=s=>s?new Date(s).toLocaleString("pt-BR"):"—";
@@ -14,7 +15,7 @@ async function refresh(){
  const {data:d,error}=await client.rpc("veste_admin_snapshot");if(seq!==revision)return;
  if(error||!d){msg(error?.code==="42501"?"Acesso restrito. Esta conta não possui permissão administrativa.":"Não foi possível consultar a operação. Verifique a instalação do backend.");return}
  for(const [id,value] of Object.entries({accounts:d.accounts,catalog:d.catalog,available:d.available,shops:d.shops,clicks:d.clicks30,catalogDate:date(d.last_catalog)}))el(id).textContent=value??"—";
- table("partners",["Parceiro","Produtos","Disponíveis","Última atualização"],(d.partners||[]).map(x=>[x.shop,x.products,x.available,date(x.synced_at)]));
+ table("partners",["Parceiro","Produtos","Disponíveis","Acessos · 30d","Última atualização"],(d.partners||[]).map(x=>[x.shop,x.products,x.available,x.clicks30,date(x.synced_at)]));
  table("daily",["Data UTC","Acessos únicos por peça/minuto"],(d.daily_clicks||[]).map(x=>[x.day,x.clicks]));
  table("sync",["Processo","Horário","Resultado","Registros","Detalhe"],(d.sync||[]).map(x=>[x.kind,date(x.finished_at),x.ok?"OK":"Falhou",x.records,x.detail]));
  el("reportStatus").textContent=d.report_ready?"Relatório Awin importado. Apenas transações identificadas pelo VESTE; valores por moeda e status não equivalem a pagamento recebido.":"Relatório Awin ainda não importado. Não há dados financeiros verificados.";
