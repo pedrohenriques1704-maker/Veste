@@ -189,7 +189,7 @@
     const c=choices[0],day=dailyForecast(localISO(new Date()));root.innerHTML=`<div class="today-suggestion">${compactCollage(c.ids)}<div class="today-copy"><div class="eyebrow">SUGESTÃO DE HOJE</div><h3>${escapeHTML(lookTitle(c))}</h3><p>${escapeHTML(rationale(c,{occasion,weather}))}</p><div class="today-tags"><span>${escapeHTML(OCCASIONS[occasion])}</span><span>${escapeHTML(SEASONS[weather])}</span>${day?.rain>=50?'<span>☂ Possibilidade de chuva</span>':''}</div><button class="btn btn-dark" data-today-go="1">Ver outras combinações ↗</button></div></div>`}
   function renderForgotten(){const el=$('forgottenPanel');if(!el)return;const sorted=state.pieces.filter(p=>p.available!==false).sort((a,b)=>(a.useCount||0)-(b.useCount||0)||String(a.lastWorn||'').localeCompare(String(b.lastWorn||''))).slice(0,4);
     if(!sorted.length){el.innerHTML='';return}const never=state.pieces.filter(p=>!p.useCount).length;
-    el.innerHTML=`<div class="forgotten-head"><div><div class="eyebrow">REDESCOBERTAS</div><h2>Peças que merecem sair do armário</h2><p>${never?never+' peça(s) ainda não tiveram uso registrado.':'Estas são suas peças com menor frequência de uso registrada.'} O aplicativo prioriza a rotação nos looks.</p></div></div><div class="forgotten-items">${sorted.map(p=>`<button class="forgotten-item" data-edit="${escapeHTML(p.id)}"><img src="${p.image}" alt="${escapeHTML(p.name)}"><span><strong>${escapeHTML(p.name)}</strong><small>${p.useCount||0} uso(s) no VESTE</small></span></button>`).join('')}</div>`}
+    el.innerHTML=`<div class="forgotten-head"><div><div class="eyebrow">REDESCOBERTAS</div><h2>Peças que merecem sair do armário</h2><p>${never?never+' peça(s) ainda não tiveram uso registrado.':'Estas são suas peças com menor frequência de uso registrada.'} O aplicativo prioriza a rotação nos looks.</p></div></div><div class="forgotten-items">${sorted.map(p=>`<button class="forgotten-item" data-v3-lock="${escapeHTML(p.id)}"><img src="${p.image}" alt="${escapeHTML(p.name)}"><span><strong>${escapeHTML(p.name)}</strong><small>${p.useCount||0} uso(s) no VESTE · Montar look</small></span></button>`).join('')}</div>`}
   function hasForbiddenPair(ids){const bad=state.settings.avoidPairs||[];if(!bad.length)return false;const col=ids.map(id=>pieceById(id)?.color).filter(Boolean);for(let i=0;i<col.length;i++)for(let j=i+1;j<col.length;j++){if(bad.includes([col[i],col[j]].sort().join('|')))return true}return false}
   function makeAvoidColors(){const html=Object.entries(COLORS).map(([k,v])=>`<option value="${k}">${escapeHTML(v.name)}</option>`).join('');$('avoidColorA').innerHTML=html;$('avoidColorB').innerHTML=html;$('avoidColorB').value='azul'}
   function addAvoidPair(){const a=$('avoidColorA').value,b=$('avoidColorB').value;if(a===b){notify('Escolha duas cores diferentes.');return}const k=[a,b].sort().join('|');state.settings.avoidPairs=Array.isArray(state.settings.avoidPairs)?state.settings.avoidPairs:[];if(!state.settings.avoidPairs.includes(k))state.settings.avoidPairs.push(k);saveLocal();state.resultsGenerated=false;state.settings.weekPlan=null;renderAdvanced();notify('Essa combinação de cores será evitada.')}
@@ -444,6 +444,49 @@
     if(context.rain!=null&&context.rain>=60&&pieceById(o.shoes)?.subtype==="sandalia"&&!required.includes(o.shoes))return false;
     return true;
   }
+  // VESTE Intelligence: bounded, local, explainable signals; no API required.
+  function buildIntelligence(pieces,settings,now=Date.now()){
+    const real=pieces.filter(p=>!isDemoPiece(p)),byId=new Map(real.map(p=>[p.id,p]));
+    const styles={},colors={},fits={},byOccasion={},events=new Map();
+    const clamp=(x,min,max)=>Math.max(min,Math.min(max,x));
+    const add=(map,k,w)=>{if(k)map[k]=(map[k]||0)+w};
+    const keyOf=k=>typeof k==='string'&&k?k.split('|').filter(Boolean).sort().join('|'):'';
+    const signal=(k,w,occasion,at)=>{k=keyOf(k);if(!k)return;const old=events.get(k)||{weight:0,occasion:null,at:null};old.weight=clamp(old.weight+w,-4,4);if(occasion)old.occasion=occasion;if(at)old.at=at;events.set(k,old)};
+    for(const k of (settings.loved||[]).slice(-150))signal(k,2);
+    for(const k of (settings.rejected||[]).slice(-150))signal(k,-3);
+    for(const f of (settings.favorites||[]).slice(-150))signal(f.key||f.ids?.join('|'),1,f.occasion,f.addedAt);
+    for(const w of (settings.wearHistory||[]).slice(-180)){const age=(now-Date.parse(w.at||w.date))/86400000;if(Number.isFinite(age)&&age>=0)signal(w.key,.6*Math.pow(.5,age/90),w.occasion,w.at||w.date)}
+    const seen=new Set();for(const f of (settings.v3?.feedback||[]).slice(-120)){const k=keyOf(f.key||f.ids?.join('|'));if(!k||seen.has(k))continue;seen.add(k);if(!events.has(k))signal(k,f.liked?2:-3,f.occasion);else if(f.occasion)events.get(k).occasion=f.occasion}
+    let observed=0;
+    for(const [k,e] of events){const items=k.split('|').map(id=>byId.get(id)).filter(Boolean);if(!items.length||!e.weight)continue;observed++;const local=byOccasion[e.occasion]||(e.occasion?(byOccasion[e.occasion]={styles:{},colors:{},fits:{}}):null);
+      for(const p of items){const w=e.weight/items.length;for(const t of new Set(p.styles||[])){if(Object.hasOwn(STYLES,t)){add(styles,t,w);if(local)add(local.styles,t,w)}}if(Object.hasOwn(COLORS,p.color)){add(colors,p.color,w);if(local)add(local.colors,p.color,w)}if(p.fit){add(fits,p.fit,w);if(local)add(local.fits,p.fit,w)}}
+    }
+    const explicit={};for(const k of settings.prefs||[])if(Object.hasOwn(STYLES,k))add(explicit,k,1.5);
+    for(const [k,n] of Object.entries(settings.v3?.ratings||{}))if(Object.hasOwn(STYLES,k))add(explicit,k,clamp(Number(n)||0,-1,1)*3);
+    const strength=Math.min(1,observed/8),norm=x=>clamp(x/Math.max(2,Math.sqrt(observed)),-3,3);
+    const learned=Object.fromEntries(Object.keys(STYLES).map(k=>[k,(explicit[k]||0)+norm(styles[k]||0)*strength]));
+    const affinity=(p,occasion)=>{if(isDemoPiece(p))return 0;const local=byOccasion[occasion]||{};const tags=(p.styles||[]).filter(k=>Object.hasOwn(STYLES,k));const style=tags.length?tags.reduce((n,k)=>n+(learned[k]||0)+norm(local.styles?.[k]||0)*.35,0)/tags.length:0;return clamp(style*1.6+norm(colors[p.color]||0)*strength+norm(fits[p.fit]||0)*strength*.7+norm(local.colors?.[p.color]||0)*.35,-8,8)};
+    const rotation=p=>{if(isDemoPiece(p)||p.available===false)return 0;const age=(now-Date.parse(p.lastWorn))/86400000;return p.lastWorn&&Number.isFinite(age)?clamp((age-7)/14,0,4):!p.useCount?2:0};
+    const available=real.filter(p=>p.available!==false);const gaps=[];
+    if(!available.some(p=>p.group==='onepiece'))for(const g of ['top','bottom'])if(!available.some(p=>p.group===g))gaps.push({group:g,reason:'Sem peças disponíveis para compor a base de um look.'});
+    if(!available.some(p=>p.group==='shoes'))gaps.push({group:'shoes',reason:'Nenhum calçado disponível para completar os looks.'});
+    for(const g of ['top','bottom','shoes']){const rows=available.filter(p=>p.group===g);if(rows.length&&rows.length<=2)gaps.push({group:g,reason:'Poucas opções disponíveis ('+rows.length+'); verifique o cadastro antes de comprar.'})}
+    return {observed,learned,colors,fits,affinity,rotation,gaps,available};
+  }
+  let activeIntelligence=null;
+  const intelligence=()=>buildIntelligence(state.pieces,state.settings);
+  const intelRank=(p,ctx,m)=>pieceFit(p,ctx.occasion,ctx.weather)+m.affinity(p,ctx.occasion)+m.rotation(p);
+  function intelReasons(c,ctx){const m=intelligence(),items=c.ids.map(pieceById).filter(Boolean),out=[];
+    const tags=Object.entries(m.learned).filter(([k,n])=>n>1&&items.some(p=>(p.styles||[]).includes(k))).sort((a,b)=>b[1]-a[1]);
+    if(tags.length)out.push('Seu perfil: '+tags.slice(0,2).map(([k])=>STYLES[k]).join(' e ')+'.');
+    if(m.observed>=3&&items.some(p=>m.colors[p.color]>1))out.push('Inclui cores presentes em combinações que você aprovou ou usou.');
+    const forgotten=items.find(p=>m.rotation(p)>=2&&!isDemoPiece(p));if(forgotten)out.push('Redescoberta: '+forgotten.name+' tem pouco uso recente registrado.');
+    return out.join(' ');
+  }
+  function renderIntelligence(){const anchor=$("v3profileResult");if(!anchor)return;let root=$("vesteIntelligence");if(!root){root=document.createElement("section");root.id="vesteIntelligence";root.className="panel";anchor.insertAdjacentElement("afterend",root)}
+    const m=intelligence(),rank=Object.entries(m.learned).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]),colors=Object.entries(m.colors).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]).slice(0,4);
+    root.innerHTML='<div class="eyebrow">VESTE INTELLIGENCE</div><h2>Seu estilo em evolução</h2><p class="note">'+(m.observed<3?'Perfil inicial: avalie e registre looks para melhorar as sugestões.':m.observed<8?'Perfil em aprendizado: as sugestões já consideram suas interações.':'Perfil com histórico: suas escolhas ajudam a ordenar os próximos looks.')+' '+m.observed+' combinação(ões) com sinais registrados. Funciona sem chave de IA.</p><div class="v3actions">'+(rank.slice(0,4).map(([k])=>'<span class="v3pill">'+E(STYLES[k])+'</span>').join('')||'<span class="note">Ainda sem preferências predominantes.</span>')+'</div><p class="note">Cores com sinal positivo: '+(colors.map(([k])=>E(COLORS[k]?.name||k)).join(', ')||'Ainda sem dados suficientes')+'</p><h3>Oportunidades no closet</h3><p class="note">São observações do cadastro e da disponibilidade, não uma lista obrigatória de compras.</p>'+ (m.gaps.map(g=>'<p><strong>'+E(GROUPS[g.group])+':</strong> '+E(g.reason)+'</p>').join('')||'<p class="note">Nenhuma lacuna básica identificada nas categorias principais.</p>');
+  }
   function reasonsScore(items,ctx){
     let total=0;const weights=profileScore(),settings=v(),form=items.map(p=>Number(p.formality)||0).filter(Boolean);
     const colors=items.map(p=>p.color).filter(Boolean);const fits=items.map(p=>p.fit);
@@ -470,16 +513,18 @@
     if(ctx.rain>=50&&items.some(p=>p.group==="shoes"&&["bota","tenis"].includes(p.subtype)))total+=3;
     return Math.max(-45,Math.min(45,total));
   }
-  scoreCandidate=function(c,ctx){return originalScore(c,ctx)+reasonsScore(c.ids.map(pieceById).filter(Boolean),ctx)};
+  scoreCandidate=function(c,ctx){const items=c.ids.map(pieceById).filter(Boolean),m=activeIntelligence||intelligence();return originalScore(c,ctx)+reasonsScore(items,ctx)+items.reduce((n,p)=>n+m.affinity(p,ctx.occasion)+m.rotation(p),0)/Math.max(1,items.length)*1.5};
+  const previousRationale=rationale;rationale=function(c,ctx){return [previousRationale(c,ctx),intelReasons(c,ctx)].filter(Boolean).join(' ')};
   function makeCandidate(o,ctx,required=[]){if(!valid(o,ctx,required))return null;const ids=[o.top,o.bottom,o.shoes,o.layer,o.accessory].filter(Boolean);const key=lookKey(ids);return {...o,ids,key,score:scoreCandidate({...o,ids},ctx)}}
   generateCandidates=function(ctx){
+    const m=intelligence();activeIntelligence=m;try{
     const required=Array.isArray(ctx.required)?ctx.required:[];
     if(required.some(id=>!pieceById(id)||pieceById(id).available===false))return [];
     const lockedBy={};for(const id of required){const p=pieceById(id),s=slot[p.group];if(lockedBy[s]&&lockedBy[s]!==id)return [];lockedBy[s]=id}
     if(lockedBy.top&&pieceById(lockedBy.top)?.group==="onepiece"&&lockedBy.bottom)return [];
     const avail=state.pieces.filter(p=>p.available!==false),by={};for(const p of avail)(by[p.group]||(by[p.group]=[])).push(p);
-    const rank=(a,base)=>a.slice().sort((x,y)=>pieceFit(y,ctx.occasion,ctx.weather)-pieceFit(x,ctx.occasion,ctx.weather)+(base?12*(scoreColors(y.color,base.color)-scoreColors(x.color,base.color)):0)).slice(0,4);
-    const ordered=g=>(by[g]||[]).slice().sort((a,b)=>pieceFit(b,ctx.occasion,ctx.weather)-pieceFit(a,ctx.occasion,ctx.weather)).slice(0,24);const tops=lockedBy.top?[pieceById(lockedBy.top)]:ordered("top");
+    const rank=(a,base)=>a.slice().sort((x,y)=>intelRank(y,ctx,m)-intelRank(x,ctx,m)+(base?12*(scoreColors(y.color,base.color)-scoreColors(x.color,base.color)):0)).slice(0,4);
+    const ordered=g=>(by[g]||[]).slice().sort((a,b)=>intelRank(b,ctx,m)-intelRank(a,ctx,m)).slice(0,32);const tops=lockedBy.top?[pieceById(lockedBy.top)]:ordered("top");
     const bottoms=lockedBy.bottom?[pieceById(lockedBy.bottom)]:ordered("bottom");
     const bases=[];for(const t of tops){if(t.group==="onepiece")continue;for(const b of bottoms)bases.push([t,b])}
     if(!lockedBy.bottom){const ones=lockedBy.top?(pieceById(lockedBy.top)?.group==="onepiece"?[pieceById(lockedBy.top)]:[]):(by.onepiece||[]).slice(0,40);for(const o of ones)bases.push([o,null])}
@@ -499,6 +544,7 @@
       for(const c of results.slice(0,200)){if(used.has(c.key))continue;const maxOverlap=chosen.reduce((m,x)=>Math.max(m,c.ids.filter(id=>x.ids.includes(id)).length/Math.max(x.ids.length,c.ids.length)),0);let value=c.score-20*maxOverlap;if(value>bs){bs=value;best=c}}
       if(!best)break;chosen.push(best);used.add(best.key);
     }return chosen;
+    }finally{activeIntelligence=null}
   };
   currentContext=function(){return {occasion:$("occasion").value,weather:$("weather").value,required:locks.slice(),rain:dailyForecast(localISO(new Date()))?.rain??null}};
   function renderLocks(){
@@ -515,7 +561,7 @@
   renderCloset=function(){oldRenderCloset();renderDemoNotice();const f=$("v3availability")?.value||"all";document.querySelectorAll("#closetGrid .garment-card").forEach(el=>{const id=el.querySelector("[data-edit]")?.dataset.edit,p=pieceById(id);if(!p)return;if((f==="available"&&p.available===false)||(f==="laundry"&&p.available!==false))el.hidden=true;el.querySelector(".garment-actions")?.insertAdjacentHTML("beforeend",'<button class="text-button" data-v3-lock="'+E(id)+'">Combinar</button><button class="text-button" data-v3-available="'+E(id)+'">'+(p.available===false?"Liberar":"Lavanderia")+'</button>');if(Number(p.price)>0)el.querySelector(".garment-info")?.insertAdjacentHTML("beforeend",'<small class="v3muted">'+(p.useCount?money(p.price/p.useCount)+" / uso":money(p.price)+" · sem uso registrado")+'</small>')});renderLocks()};
   const baseRender=renderAll;
   renderAll=function(){baseRender();renderLocks();if(state.view==="atelier")renderAtelier();else if(state.view==="style")renderProfile();else if(state.view==="week"){renderManagement();renderTrip()}else if(state.view==="looks")renderChat()};
-  renderStyle=function(){oldRenderStyle();if($("v3profileSummary"))$("v3profileSummary").textContent=Object.entries(profileScore()).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]).map(([k])=>STYLES[k]).join(" · ")||"Ainda sem avaliações visuais."};
+  renderStyle=function(){oldRenderStyle();if($("v3profileSummary"))$("v3profileSummary").textContent=Object.entries(intelligence().learned).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]).map(([k])=>STYLES[k]).join(" · ")||"Ainda sem avaliações visuais."};
   navigate=function(route){if(route!=="atelier"){oldNavigate(route);if(route==="style")renderProfile();if(route==="week"){renderManagement();renderTrip()}if(route==="looks")renderChat();return}state.view=route;document.querySelectorAll(".view").forEach(el=>el.classList.toggle("active",el.id==="view-atelier"));document.querySelectorAll("[data-route]").forEach(el=>el.classList.toggle("active",el.dataset.route===route));$("topbarTitle").textContent="ATELIÊ VESTE";renderAtelier();window.scrollTo({top:0,behavior:"smooth"})};
   function recordFeedback(c,liked,reasons){
     const items=c.ids.map(pieceById).filter(Boolean);let entries=v().feedback||[];
@@ -535,7 +581,7 @@
     return '<svg viewBox="0 0 144 234" aria-hidden="true"><rect width="144" height="234" rx="12" fill="#e8dfd4"/><ellipse cx="72" cy="224" rx="48" ry="4" fill="#d2c6bb"/>'+top+bot+'<path d="M33 209H65V223H24Q20 216 33 209 M80 209H111L121 223H80Z" fill="'+(shoe==="tenis"?"#faf7ef":"#41372e")+'" stroke="#817368"/></svg>'}
   function renderProfile(){
     $("v3styleCards").innerHTML=profiles.map(p=>{const n=bins()[p[0]]||0;return '<article class="v3style v7-style-card"><img class="v7-style-photo" src="'+p[7]+'" loading="lazy" decoding="async" alt="Referência fotográfica do estilo '+E(p[1])+'"><div class="v7-style-copy"><strong>'+E(p[1])+'</strong><p>'+E(p[8])+'</p><a class="v7-style-credit" href="'+p[10]+'?utm_source=veste_app&utm_medium=referral" target="_blank" rel="noopener noreferrer">Foto: '+E(p[9])+' · Unsplash ↗</a></div><div class="v3actions"><button class="v3pill '+(n<0?"selected":"")+'" data-v3-rate="'+p[0]+':-1">Não é meu</button><button class="v3pill '+(n>0?"selected":"")+'" data-v3-rate="'+p[0]+':1">♡ Gosto</button></div></article>'}).join("");
-    $("v3profileResult").textContent=Object.entries(profileScore()).filter(x=>x[1]>0).map(([k])=>STYLES[k]).join(" · ")||"Avalie os exemplos para ensinar seu gosto.";
+    $("v3profileResult").textContent=Object.entries(intelligence().learned).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]).map(([k])=>STYLES[k]).join(" · ")||"Avalie os exemplos para ensinar seu gosto.";renderIntelligence();
     $("v3cover").value=v().cover||"";$("v3silhouette").value=v().silhouette||"";$("v3palette").value=v().palette||"";
     $("v3swatches").innerHTML=(palettes[v().palette]||[]).map(c=>'<span class="v3swatch" style="background:'+COLORS[c].hex+'" title="'+E(COLORS[c].name)+'"></span>').join("");
   }
@@ -547,7 +593,7 @@
     const days=new Date(Number(month.slice(0,4)),Number(month.slice(5)),0).getDate();const first=new Date(month+"-01T12:00:00").getDay();
     $("v3calendar").innerHTML=["D","S","T","Q","Q","S","S"].map(x=>"<small>"+x+"</small>").join("")+"<span></span>".repeat(first)+Array.from({length:days},(_,i)=>{const date=month+"-"+String(i+1).padStart(2,"0"),n=monthRecords.filter(w=>(w.date||String(w.at).slice(0,10))===date).length;return '<button class="v3day '+(n?"selected":"")+'" data-v3-date="'+date+'">'+(i+1)+(n?"<small>"+n+"</small>":"")+"</button>"}).join("");
     const forgotten=pieces.filter(p=>p.available!==false).sort((a,b)=>(a.useCount||0)-(b.useCount||0)).slice(0,5);$("v3unused").innerHTML=forgotten.map(p=>'<button class="v3piece" data-v3-lock="'+E(p.id)+'"><img src="'+p.image+'" alt=""><span>'+E(p.name)+" · "+(p.useCount||0)+" usos</span></button>").join("")||"<p>Cadastre suas primeiras peças.</p>";
-    const gaps=Object.keys(GROUPS).filter(g=>!pieces.some(p=>p.group===g));$("v3gaps").textContent=gaps.length?"Categorias ainda não cadastradas: "+gaps.map(groupName).join(", ")+". Isso não significa que você precisa comprar.":"Todas as categorias têm peças cadastradas.";
+    const gaps=intelligence().gaps;$("v3gaps").textContent=gaps.length?gaps.map(g=>groupName(g.group)+': '+g.reason).join(' '):'Nenhuma lacuna básica identificada nas categorias principais.';
     $("v3wishList").innerHTML=(v().wishes||[]).map((w,i)=>'<article class="v3wish"><strong>'+E(w.name)+'</strong><small>'+E(groupName(w.group))+" · "+E(COLORS[w.color]?.name||"Cor não informada")+(w.price?" · "+money(w.price):"")+'</small><p>'+E(w.note||"")+'</p><button class="text-button" data-v3-wish-delete="'+i+'">Remover</button></article>').join("")||"<p class='v3muted'>Nenhuma compra em avaliação.</p>";
   }
   function dayDetail(date){const items=(state.settings.wearHistory||[]).filter(w=>(w.date||String(w.at).slice(0,10))===date);$("v3calendarDetail").innerHTML="<strong>"+E(date.split("-").reverse().join("/"))+"</strong>"+(items.length?items.map(w=>compactCollage(String(w.key).split("|"))+"<p>"+E(String(w.key).split("|").map(id=>pieceById(id)?.name).filter(Boolean).join(" · ")||"Peças removidas")+"</p>").join(""):"<p>Sem uso registrado.</p>")}
