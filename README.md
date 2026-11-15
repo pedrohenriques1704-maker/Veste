@@ -143,3 +143,12 @@ A Home passa a explicar o fluxo do produto em cinco etapas e mostra progresso de
 O teste visual de estilo agora usa dez referências fotográficas reais, com descrição curta para ajudar a diferenciar Casual chic, Clássico, Minimalista, Street, Alternativo, Criativo, Romântico, Esportivo, Casual e Noturno. As imagens escolhidas são referências do Unsplash e cada card mantém crédito e link para a página da fotografia.
 
 A configuração de Gemini permanece disponível, mas fica recolhida em **Recursos experimentais de IA**, fora do fluxo principal.
+
+
+### VESTE 7.0.1 — identidade visual e ativação da IA
+
+- A marca deixa de depender do caractere emoji e o símbolo passa a ser desenhado por CSS na cor terracota da identidade.
+- Os cards da jornada deixam de herdar o azul padrão de botões do iOS, e a seta passa a ser um elemento visual coerente com a paleta do VESTE.
+- Perfil → Recursos de IA ganha instruções em três passos para criar uma chave no Google AI Studio e conectá-la.
+- Ao tentar qualquer função de IA sem chave ativa, o app orienta o caminho Perfil → Recursos de IA; fora de diálogos, também abre o Perfil e expande a seção automaticamente.
+- O VESTE não cobra valor adicional pelo recurso. A chave pertence ao usuário e segue a faixa gratuita, limites e eventuais cobranças definidos pelo Google.
