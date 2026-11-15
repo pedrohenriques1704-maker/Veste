@@ -64,3 +64,17 @@ revoke all on function public.veste_admin_usage_snapshot(integer) from public,an
 grant execute on function public.veste_admin_usage_snapshot(integer) to authenticated;
 -- Keep raw pseudonymous events for 90 days; hourly-independent daily cleanup.
 select cron.schedule('veste-analytics-retention','45 4 * * *',$cron$delete from veste_private.page_views where viewed_at < now()-interval '90 days'$cron$);
+
+-- Read-only administrative roster.
+create or replace function veste_private.admin_access_roster() returns jsonb language plpgsql security definer set search_path='' as $$
+declare result jsonb;
+begin
+ if auth.uid() is null or not exists(select 1 from veste_private.commerce_admins a where a.user_id=auth.uid()) then raise exception 'Access denied' using errcode='42501';end if;
+ select coalesce(jsonb_agg(jsonb_build_object('email',u.email,'created_at',u.created_at,'last_sign_in_at',u.last_sign_in_at,'current_account',u.id=auth.uid()) order by u.email),'[]'::jsonb) into result from veste_private.commerce_admins a join auth.users u on u.id=a.user_id;
+ return result;
+end;$$;
+revoke all on function veste_private.admin_access_roster() from public,anon,authenticated;
+grant execute on function veste_private.admin_access_roster() to authenticated;
+create or replace function public.veste_admin_access_roster() returns jsonb language sql security invoker set search_path='' as $$select veste_private.admin_access_roster()$$;
+revoke all on function public.veste_admin_access_roster() from public,anon,authenticated;
+grant execute on function public.veste_admin_access_roster() to authenticated;
