@@ -12,15 +12,16 @@ def https(x, host=None):
     u=urllib.parse.urlsplit(text(x, 3000))
     if u.scheme!="https" or not u.hostname or u.username or u.password or (host and u.hostname not in host): return ""
     return u.geturl()
-def amount(v):
+def amount(v, signed=False):
     s=text(v,40).replace("BRL","").replace("R$","").strip()
     if "," in s: s=s.replace(".","").replace(",",".")
     try:
         n=Decimal(s)
-        if n.is_finite() and 0<=n<=100000: return float(n)
+        if n.is_finite() and (-100000 if signed else 0)<=n<=100000: return float(n)
     except InvalidOperation: pass
     return None
 def get(url):
+    if not https(url,{"productdata.awin.com","ui.awin.com","api.awin.com"}): raise ValueError("Untrusted feed host")
     with urllib.request.urlopen(urllib.request.Request(url,headers={"User-Agent":"VESTE-Catalog/7.3"}),timeout=90) as r:
         if not https(r.geturl(),{"productdata.awin.com","ui.awin.com","api.awin.com"}): raise ValueError("Unexpected feed host")
         data=r.read(50*1024*1024+1)
@@ -51,6 +52,11 @@ def normalize(r,merchant,shop,stamp):
     group=next((k for k,rx in GROUPS if re.search(rx,norm(name))),None) or next((k for k,rx in GROUPS if re.search(rx,norm(category))),None)
     variant=text(pick("merchant_product_id","id"),180)
     base=text(pick("item_group_id","product_group_id") or variant,180)
+    merchant_url=https(pick("merchant_deep_link"))
+    if merchant==118977:
+        slug=re.fullmatch(r"/([a-z0-9-]+)/p/?",urllib.parse.urlsplit(merchant_url).path)
+        if slug: base=slug.group(1)
+        else: return None  # Preserve the original Lauri stable product-ID scheme.
     link=https(pick("aw_deep_link","affiliate_url","link"))
     # Only accept Awin tracking URLs, not merchant links masquerading as affiliate URLs.
     if not link or urllib.parse.urlsplit(link).hostname not in {"www.awin1.com","awin1.com","www.zenaps.com","zenaps.com"}: return None
@@ -68,7 +74,7 @@ def normalize(r,merchant,shop,stamp):
     available=stock in ("1","true","yes","in stock","in_stock","available","disponivel","instock")
     on_sale=sale not in ("0","false","no")
     size=text(pick("size","size_name"),40)
-    return dict(id=f"awin:{merchant}:{base}",source="awin",merchant_id=merchant,merchant_product_id=base,awin_product_id=text(pick("aw_product_id"),100),name=name,description=text(pick("description"),1000),affiliate_url=link,merchant_url=https(pick("merchant_deep_link")),image_url=https(pick("aw_image_url","merchant_image_url","image_link")),price=price,rrp_price=amount(pick("rrp_price","rrp","sale_price")) if cur in ("BRL","R$") else None,currency="BRL" if cur in ("BRL","R$") else cur,group_key=group,merchant_category=category,category_name=text(pick("category_name"),180),brand=text(pick("brand_name","brand"),80),shop=shop,color=color,raw_colour=raw,audience=audience,sizes=[size] if size else [],in_stock=available,is_for_sale=on_sale,variant_count=1,source_updated_at=stamp,synced_at=datetime.now(timezone.utc).isoformat())
+    return dict(id=f"awin:{merchant}:{base}",source="awin",merchant_id=merchant,merchant_product_id=base,awin_product_id=text(pick("aw_product_id"),100),name=name,description=text(pick("description"),1000),affiliate_url=link,merchant_url=merchant_url,image_url=https(pick("aw_image_url","merchant_image_url","image_link")),price=price,rrp_price=amount(pick("rrp_price","rrp","sale_price")) if cur in ("BRL","R$") else None,currency="BRL" if cur in ("BRL","R$") else cur,group_key=group,merchant_category=category,category_name=text(pick("category_name"),180),brand=text(pick("brand_name","brand"),80),shop=shop,color=color,raw_colour=raw,audience=audience,sizes=[size] if size else [],in_stock=available,is_for_sale=on_sale,variant_count=1,source_updated_at=stamp,synced_at=datetime.now(timezone.utc).isoformat())
 def combine(items):
     out={}
     for x in items:
@@ -104,10 +110,10 @@ def sync_catalog():
         parsed=rows(get(feed))
         products=combine(normalize(x,mid,text(r.get("advertiser name"),80),stamp) for x in parsed)
         if not parsed or not products or not any(p["in_stock"] and p["is_for_sale"] for p in products): raise ValueError("Empty or unrecognized catalog; preserving existing rows")
-        # Upsert only. Never disable missing products from a partial/unverified feed.
-        for i in range(0,len(products),200): db("veste_catalog_products?on_conflict=id",products[i:i+200])
+        # Atomic per-merchant snapshot, with deletion guard server-side. No hard deletes.
+        db("rpc/veste_catalog_snapshot_import",{"merchant":mid,"records":products,"expected_rows":len(parsed)})
         total+=len(products);processed.add(mid)
-    if not processed: raise ValueError("No supported approved feeds")
+    if processed!=allowed: raise ValueError("One or more configured advertisers lack a supported active feed")
     log("catalog",True,total,"Approved Awin feeds imported; explicit stock flags applied")
 def sync_transactions():
     pub=os.environ["AWIN_PUBLISHER_ID"]; token=os.environ["AWIN_API_TOKEN"]
@@ -122,7 +128,7 @@ def sync_transactions():
         if not isinstance(sale,dict) or not isinstance(commission,dict): raise ValueError("Unexpected monetary format")
         cur=text(commission.get("currency"),3)
         if not cur or cur!=text(sale.get("currency"),3): raise ValueError("Currency mismatch")
-        sv=amount(sale.get("amount")); cv=amount(commission.get("amount"))
+        sv=amount(sale.get("amount"),signed=True); cv=amount(commission.get("amount"),signed=True)
         if sv is None or cv is None or not x.get("id") or not x.get("transactionDate"): raise ValueError("Invalid transaction")
         records.append(dict(id=str(x["id"]),merchant_id=x.get("advertiserId"),transaction_at=x["transactionDate"],status=text(x.get("commissionStatus"),30),currency=cur,sale_amount=sv,commission_amount=cv))
     for i in range(0,len(records),200): db("rpc/veste_commerce_transactions_import",{"records":records[i:i+200]})
