@@ -89,7 +89,7 @@
   function lookKey(ids){return ids.filter(Boolean).slice().sort().join('|')}
   function currentContext(){return {occasion:$('occasion').value,weather:$('weather').value}}
   function pickBest(items,base,occasion,weather){if(!items.length)return null;return items.slice().sort((x,y)=>pieceFit(y,occasion,weather)+scoreColors(y.color,base.color)*12-(pieceFit(x,occasion,weather)+scoreColors(x.color,base.color)*12))[0]}
-  function pieceFit(g,occasion,weather){let r=0;if(!g)return 0;if(!g.occasions?.length||g.occasions.includes(occasion))r+=7;else r-=11;if(occasion==='trabalho'&&g.formality===1)r-=7;if(occasion==='esporte'&&g.formality>=4)r-=11;if(occasion==='evento'&&g.formality>=4)r+=5;if(!g.seasons?.length||g.seasons.includes(weather))r+=5;else r-=8;if(g.styles?.some(s=>(state.settings.prefs||[]).includes(s)))r+=5;if(g.lastWorn){const days=(Date.now()-Date.parse(g.lastWorn))/86400000;if(days>=0&&days<(Number(state.settings.repeatDays)||0))r-=11}return r}
+  function pieceFit(g,occasion,weather){let r=0;if(!g)return 0;if(!g.occasions?.length||g.occasions.includes(occasion))r+=7;else r-=11;if(occasion==='trabalho'&&g.formality===1)r-=7;if(occasion==='esporte'&&g.formality>=4)r-=11;if(occasion==='evento'&&g.formality>=4)r+=5;if(!g.seasons?.length||g.seasons.includes(weather))r+=5;else r-=8;if(g.styles?.some(s=>(state.settings.prefs||[]).includes(s)))r+=5;r+=profileAffinity(g);if(g.lastWorn){const days=(Date.now()-Date.parse(g.lastWorn))/86400000;if(days>=0&&days<(Number(state.settings.repeatDays)||0))r-=11}return r}
   function scoreCandidate(c,context){const items=c.ids.map(pieceById).filter(Boolean);const harmony=averageHarmony(items);let score=40+Math.round(harmony*33)+items.reduce((n,p)=>n+pieceFit(p,context.occasion,context.weather),0)/Math.max(items.length,1)*1.5;
     if(c.shoes)score+=7;if(context.weather==='frio'&&c.layer)score+=9;if(context.weather==='quente'&&c.layer)score-=9;
     if(c.accessory)score+=2;const strongPatterns=items.filter(p=>p.pattern&&p.pattern!=='liso');if(strongPatterns.length>=2)score-=8;
@@ -244,7 +244,7 @@
   async function reviewLooksWithAI(){if(!state.aiKey){showAISetupGuide('A revisão dos looks');return}if(!state.candidates.length){notify('Gere looks primeiro.');return}
     const btn=$('aiReviewLooks');btn.disabled=true;btn.textContent='Consultando IA...';$('aiLookAdvice').textContent='Comparando combinações com suas preferências...';
     const summary=state.candidates.map((c,i)=>({index:i,score:Math.round(c.score),items:c.ids.map(id=>{const p=pieceById(id);return p?{id:p.id,nome:p.name,categoria:p.group,cor:p.color,estampa:p.pattern,modelagem:p.fit,formalidade:p.formality,estilos:p.styles}:null}).filter(Boolean)}));
-    const prompt=`Atue como stylist, evite clichês, priorize coerência estética e gosto pessoal. Avalie estes ${summary.length} looks (somente dados das peças, NÃO fotos), ocasião ${OCCASIONS[$('occasion').value]}, clima ${SEASONS[$('weather').value]}, estilos preferidos ${(state.settings.prefs||[]).join(',')}. Looks: ${JSON.stringify(summary)}. Retorne JSON puro com: order (array de índices em ordem decrescente de adequação, sem repetir), comments (array de objetos {index,comment} com máximo 90 caracteres cada; nenhum dado inventado), tip (uma recomendação prática em português, no máximo 150 caracteres). Use apenas índices fornecidos. Não sugira produtos para comprar.`;
+    const prompt=`Atue como stylist, evite clichês, priorize coerência estética e gosto pessoal. Avalie estes ${summary.length} looks (somente dados das peças, NÃO fotos), ocasião ${OCCASIONS[$('occasion').value]}, clima ${SEASONS[$('weather').value]}, estilos preferidos ${(state.settings.prefs||[]).join(',')}. Preferências de vestuário ${JSON.stringify(profileContext())}. Looks: ${JSON.stringify(summary)}. Retorne JSON puro com: order (array de índices em ordem decrescente de adequação, sem repetir), comments (array de objetos {index,comment} com máximo 90 caracteres cada; nenhum dado inventado), tip (uma recomendação prática em português, no máximo 150 caracteres). Use apenas índices fornecidos. Não sugira produtos para comprar.`;
     try{const result=await callGemini([{text:prompt}]);const previous=state.candidates.slice();if(previous.length!==summary.length||previous.some((c,i)=>c.ids.join('|')!==summary[i].items.map(p=>p.id).join('|')))throw new Error('Os looks mudaram durante a consulta. Tente novamente.');if(!Array.isArray(result.order)||new Set(result.order).size!==previous.length||result.order.some(i=>!Number.isInteger(i)||i<0||i>=previous.length))throw new Error('A IA não retornou um ranking válido.');
       state.candidates=result.order.map(i=>previous[i]);state.aiNotes={};for(const item of Array.isArray(result.comments)?result.comments:[]){if(Number.isInteger(item.index)&&previous[item.index]&&typeof item.comment==='string')state.aiNotes[previous[item.index].key]=item.comment.slice(0,120)}renderLooks();$('aiLookAdvice').classList.add('ai-result');$('aiLookAdvice').textContent=String(result.tip||'Looks reordenados pela IA.').slice(0,200);notify('Looks reordenados com a análise da IA.');
     }catch(err){$('aiLookAdvice').textContent=err.message;notify(err.message)}finally{btn.disabled=false;btn.textContent='Analisar looks com IA'}}
@@ -399,7 +399,7 @@
     await cloud.prepare();cloud.mount();
     if('serviceWorker' in navigator&&['http:','https:'].includes(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});
     if(!cloud.canEnter())return;
-    try{await keyVault.restore();atelierV3();discovery.mount();experienceV7();makeColorOptions();makeAvoidColors();$('weatherCity').value=state.settings.weatherCity||'Rio de Janeiro';renderAdvanced();createChecks('pieceOccasions',OCCASIONS);createChecks('pieceSeasons',SEASONS);createChecks('pieceStyles',STYLES);setupEvents();bulk.mount();duplicates.mount();state.db=await openDatabase();await refreshPieces();cloud.start();try{mountUsageAnalytics()}catch{} }catch(err){cloud.fail('Não foi possível iniciar o closet. Tente atualizar a página ou usar outro navegador. Seus dados não foram apagados.');console.error(err)}
+    try{await keyVault.restore();atelierV3();discovery.mount();experienceV7();makeColorOptions();makeAvoidColors();$('weatherCity').value=state.settings.weatherCity||'Rio de Janeiro';renderAdvanced();createChecks('pieceOccasions',OCCASIONS);createChecks('pieceSeasons',SEASONS);createChecks('pieceStyles',STYLES);setupEvents();bulk.mount();duplicates.mount();state.db=await openDatabase();await refreshPieces();personalization.mount();personalization.reconcile();cloud.start();try{mountUsageAnalytics()}catch{} }catch(err){cloud.fail('Não foi possível iniciar o closet. Tente atualizar a página ou usar outro navegador. Seus dados não foram apagados.');console.error(err)}
   }
   let shoppingProfile=()=>({learned:{},observed:0});
   function atelierV3(){
@@ -623,7 +623,7 @@
     const named=state.pieces.filter(p=>p.available!==false&&p.name.length>=5&&lower.includes(p.name.toLocaleLowerCase("pt-BR"))).slice(0,2).map(p=>p.id);
     const selected=[...new Set([...locks,...named])];let choices=generateCandidates({occasion,weather,required:selected,pool:12});
     consultLooks=choices.slice(0,4);let answer="";
-    if(useAI){$("v3chatAI").disabled=true;$("v3chatLocal").disabled=true;try{const inventory=state.pieces.filter(p=>p.available!==false).slice(0,250).map(facts);const prompt="Você é consultora de moda pessoal. Responda em português do Brasil, em JSON {answer: string, lookIndices: array de índices 0 a "+(consultLooks.length-1)+"}. Evite inventar peças que a pessoa possui; apenas recomende IDs e looks fornecidos, e se sugerir alternativas deixe explícito. Analise foto se fornecida, sem inferir atributos sensíveis nem criticar corpo. Perfil: "+JSON.stringify({estilos:state.settings.prefs,paleta:v().palette,cobertura:v().cover,silhueta:v().silhouette})+". Closet parcial até 250: "+JSON.stringify(inventory)+". Looks permitidos: "+JSON.stringify(consultLooks.map((c,i)=>({i,items:c.ids.map(id=>facts(pieceById(id)))})))+". Conversa recente: "+JSON.stringify(chat.slice(-8))+". Pedido: "+q;const parts=[{text:prompt}];if(photo)parts.push(imgPart(photo));const resp=await callGemini(parts);answer=typeof resp.answer==="string"?resp.answer.slice(0,5000):"A IA não retornou uma resposta.";if(Array.isArray(resp.lookIndices)){const idx=[...new Set(resp.lookIndices)].filter(i=>Number.isInteger(i)&&consultLooks[i]);if(idx.length)consultLooks=idx.map(i=>consultLooks[i])}}catch(err){answer="A consulta não foi concluída: "+err.message+" As sugestões locais continuam abaixo."}finally{$("v3chatAI").disabled=false;$("v3chatLocal").disabled=false}}
+    if(useAI){$("v3chatAI").disabled=true;$("v3chatLocal").disabled=true;try{const inventory=state.pieces.filter(p=>p.available!==false).slice(0,250).map(facts);const prompt="Você é consultora de moda pessoal. Responda em português do Brasil, em JSON {answer: string, lookIndices: array de índices 0 a "+(consultLooks.length-1)+"}. Evite inventar peças que a pessoa possui; apenas recomende IDs e looks fornecidos, e se sugerir alternativas deixe explícito. Analise foto se fornecida, sem inferir atributos sensíveis nem criticar corpo. Perfil: "+JSON.stringify({estilos:state.settings.prefs,paleta:v().palette,cobertura:v().cover,silhueta:v().silhouette,...profileContext()})+". Closet parcial até 250: "+JSON.stringify(inventory)+". Looks permitidos: "+JSON.stringify(consultLooks.map((c,i)=>({i,items:c.ids.map(id=>facts(pieceById(id)))})))+". Conversa recente: "+JSON.stringify(chat.slice(-8))+". Pedido: "+q;const parts=[{text:prompt}];if(photo)parts.push(imgPart(photo));const resp=await callGemini(parts);answer=typeof resp.answer==="string"?resp.answer.slice(0,5000):"A IA não retornou uma resposta.";if(Array.isArray(resp.lookIndices)){const idx=[...new Set(resp.lookIndices)].filter(i=>Number.isInteger(i)&&consultLooks[i]);if(idx.length)consultLooks=idx.map(i=>consultLooks[i])}}catch(err){answer="A consulta não foi concluída: "+err.message+" As sugestões locais continuam abaixo."}finally{$("v3chatAI").disabled=false;$("v3chatLocal").disabled=false}}
     else answer=(photo?"A foto não foi analisada no modo local. ":"")+(choices.length?"Sugestões do seu closet para "+OCCASIONS[occasion].toLowerCase()+", clima "+SEASONS[weather].toLowerCase()+". "+rationale(choices[0],{occasion,weather}):"Não encontrei uma combinação compatível. Revise suas peças fixadas e disponibilidade.")+" Modo local: interpretação simples de palavras-chave.";
     chat.push({role:"assistant",text:answer});chat=chat.slice(-30);renderChat();$("v3chatLooks").innerHTML=consultLooks.map((c,i)=>'<article class="panel">'+compactCollage(c.ids)+"<p>"+E(lookTitle(c))+'</p></article>').join("");advicePhoto=null;$("v3advicePhoto").value="";$("v3adviceLabel").textContent="";
   }
@@ -683,7 +683,7 @@
   const guestDB='veste-closet-v1',guestSettings='veste-settings-v1',authKey='veste-supabase-auth-v1';
   const marker='veste-cloud-account-v1';
   const bucket='veste-photos',table='veste_closets';
-  let client=null, loading=null, user=null, ready=false, busy=false, applying=false, recovery=false, checked=false, epoch=0, timer=null, meta={revision:null,dirty:false,conflict:false}, setupDone=false, hadMeta=false, sessionExpiry=0, bootError='';
+  let client=null, loading=null, user=null, ready=false, busy=false, applying=false, recovery=false, checked=false, epoch=0, timer=null, meta={revision:null,dirty:false,conflict:false}, setupDone=false, hadMeta=false, sessionExpiry=0, bootError='', profileChecked=false, profileExisting=false;
   const kid=()=>user?.id||null;
   const get=(k)=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch{return null}};
   const put=(k,v)=>{localStorage.setItem(k,JSON.stringify(v))};
@@ -697,6 +697,7 @@
     for(const k of allowed)if(Object.hasOwn(input,k))out[k]=input[k];
     for(const k of ['prefs','loved','rejected','favorites','wearHistory','avoidPairs'])if(!Array.isArray(out[k]))out[k]=[];
     if(out.v3&&typeof out.v3!=='object')delete out.v3;
+    if(Object.hasOwn(input,'personalProfile'))out.personalProfile=personalProfile(input.personalProfile);
     return JSON.parse(JSON.stringify(out));
   }
   function msg(message){const el=$('cloudMessage');if(el)el.textContent=message}
@@ -851,6 +852,7 @@
     busy=true;render();const uid=kid(),start=epoch;
     try{
       const c=await sessionClient(),row=await getRemote(c,uid),rev=baseRevision(row);checked=true;
+      if(!profileChecked)profileExisting=!!row||state.pieces.length>0||(hadMeta&&meta.revision!==null);
       let action=classify(meta.revision,rev,meta.dirty,force);
       // A lost local cache is not an instruction to erase remote data.
       if(action==='noop'&&row){const localIds=(await dbGetAll()).map(p=>p.id).sort().join('|'),remoteIds=(row.pieces||[]).map(p=>p.id).sort().join('|');if(localIds!==remoteIds)action='pull'}
@@ -858,13 +860,13 @@
         meta.conflict=true;persist();msg('Há mudanças diferentes na nuvem e neste dispositivo. Escolha qual versão manter; nenhuma foi sobrescrita.');return;
       }
       if(action==='noop'&&row?.pieces?.some(p=>trashExpired(p)))action='push';
-      if(action==='noop'){msg(row?'Tudo sincronizado.':'Conta conectada. Adicione peças ou importe o closet local.');return}
+      if(action==='noop'){profileChecked=true;msg(row?'Tudo sincronizado.':'Conta conectada. Adicione peças ou importe o closet local.');return}
       if(action==='pull'){
         const pcs=await pullPieces(c,uid,row);
         if(!ready||epoch!==start||!idle()||kid()!==uid){msg('O closet mudou durante a consulta. Tente novamente.');return}
         applying=true;const shell=document.querySelector('.app-shell'),nav=document.querySelector('.mobile-nav');if(shell)shell.inert=true;if(nav)nav.inert=true;
         try{
-          await dbReplace(pcs);state.settings=defaults(row?.settings||{});saveLocal();state.candidates=[];state.resultsGenerated=false;await refreshPieces();meta={revision:rev,dirty:false,conflict:false};persist();
+          await dbReplace(pcs);state.settings=defaults(row?.settings||{});saveLocal();state.candidates=[];state.resultsGenerated=false;await refreshPieces();meta={revision:rev,dirty:false,conflict:false};persist();profileChecked=true;
         }finally{applying=false;if(shell)shell.inert=false;if(nav)nav.inert=false}
         msg('Versão da nuvem carregada: '+pcs.length+' peças.');return;
       }
@@ -877,9 +879,9 @@
       if((response.error&&response.error.code==='23505')||(!response.error&&!response.data)){meta.conflict=true;persist();msg('Outro dispositivo sincronizou primeiro. Nenhuma versão foi sobrescrita.');return}
       if(response.error)throw response.error;
       if(epoch===start&&kid()===uid&&state.db){const expired=(await dbGetAll()).filter(p=>trashExpired(p));if(expired.length&&epoch===start&&kid()===uid){applying=true;try{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');await new Promise((resolve,reject)=>{t.oncomplete=resolve;t.onabort=()=>reject(t.error);t.onerror=()=>reject(t.error);for(const p of expired){const req=store.get(p.id);req.onsuccess=()=>{if(req.result&&trashExpired(req.result))store.delete(p.id)}}});await refreshPieces()}finally{applying=false}}}
-      meta={revision:Number(response.data.revision),dirty:epoch!==start,conflict:false};persist();msg('Sincronizado: '+items.length+' peças, preferências e histórico.');
+      meta={revision:Number(response.data.revision),dirty:epoch!==start,conflict:false};persist();profileChecked=true;msg('Sincronizado: '+items.length+' peças, preferências e histórico.');
     }catch(e){msg('Sincronização pendente: '+String(e?.message||e).slice(0,250)+'. Seus dados locais foram mantidos.')}
-    finally{busy=false;render();if(meta.dirty&&!meta.conflict&&epoch!==start)schedule(1600)}
+    finally{busy=false;render();personalization.reconcile({ready:profileChecked,conflict:meta.conflict,existing:profileExisting});if(meta.dirty&&!meta.conflict&&epoch!==start)schedule(1600)}
   }
   async function guestMigration(){
     if(!user||busy||recovery||!idle())return;
@@ -982,7 +984,7 @@
     $('cloudKeepRemote').onclick=()=>{if(confirm('Substituir o closet deste aparelho pela versão da nuvem? Recomendamos exportar um backup primeiro.'))sync(true,'remote')};
     setupDone=true;render();
   }
-  function start(){ready=true;if(user&&!hadMeta&&state.pieces.length){meta.dirty=true;try{persist()}catch{}}render();if(user){schedule(100);window.addEventListener('online',()=>schedule(50));window.addEventListener('focus',()=>schedule(500));window.addEventListener('offline',render);setInterval(()=>{if(document.visibilityState==='visible'&&idle())sync(false)},30000);setInterval(()=>{if(ready&&user&&sessionExpiry&&sessionExpiry<=Date.now()/1000&&!navigator.onLine){ready=false;clearTimeout(timer);document.querySelectorAll('dialog[open]').forEach(d=>d.close());bootError='Sua sessão expirou. Conecte-se à internet e atualize a página para entrar novamente.';render()}},15000)}}
+  function start(){ready=true;personalization.reconcile({ready:profileChecked,conflict:meta.conflict,existing:profileExisting});if(user&&!hadMeta&&state.pieces.length){meta.dirty=true;try{persist()}catch{}}render();if(user){schedule(100);window.addEventListener('online',()=>schedule(50));window.addEventListener('focus',()=>schedule(500));window.addEventListener('offline',render);setInterval(()=>{if(document.visibilityState==='visible'&&idle())sync(false)},30000);setInterval(()=>{if(ready&&user&&sessionExpiry&&sessionExpiry<=Date.now()/1000&&!navigator.onLine){ready=false;clearTimeout(timer);document.querySelectorAll('dialog[open]').forEach(d=>d.close());bootError='Sua sessão expirou. Conecte-se à internet e atualize a página para entrar novamente.';render()}},15000)}}
   function fail(message){ready=false;bootError=message;render()}
   return {prepare,mount,start,touch,catalogClient:sessionClient,listVersions,exportVersion,account:()=>!!user,canEnter:()=>!!user&&!recovery,fail,defaults,classify,validPath,screenFrom,passwordError,authError};
 }
@@ -1483,7 +1485,7 @@
   const shop=shopping();
   function data(){let d=state.settings.discovery;if(!d||typeof d!=="object"||Array.isArray(d))d=state.settings.discovery={};if(!Array.isArray(d.catalog))d.catalog=[];if(!Array.isArray(d.votes))d.votes=[];if(!Array.isArray(d.tracks))d.tracks=[];return d}
   function blank(){return {styles:[],groups:[],colors:[],audience:"",size:"",occasion:"",brand:"",min:"",max:"",query:"",order:"match",avoidSimilar:false,gapsOnly:false,hasLooks:false}}
-  let f=blank(),source="idea",tab="feed",current=null,history=[],touch=null,mounted=false,radarMode="all",remoteCatalog=[],remoteState="idle",remoteError="",remoteChecked=0;
+  let lastAudience=null;let f=blank(),source="idea",tab="feed",current=null,history=[],touch=null,mounted=false,radarMode="all",remoteCatalog=[],remoteState="idle",remoteError="",remoteChecked=0;
   function matches(p,f,mode){
     if(!p)return false;
     if(f.styles.length&&!p.styles.some(x=>f.styles.includes(x)))return false;
@@ -1505,7 +1507,7 @@
   function ranked(p,votes){
     let n=p.styles.reduce((a,k)=>a+((state.settings.prefs||[]).includes(k)?8:0)+Math.max(-8,Math.min(8,Number(state.settings.v3?.ratings?.[k])||0)),0);
     for(const v of votes){const q=v.item;n+=(v.liked?1:-1)*(Math.min(2,(q.styles||[]).filter(k=>p.styles.includes(k)).length)*2+Number(q.group===p.group)+Number(!!q.color&&q.color===p.color))*.7}
-    return n+Math.min(compat(p),12)*.8;
+    return n+Math.min(compat(p),12)*.8+profileShoppingAffinity(p);
   }
   async function loadRemote(force=false){
     if(remoteState==="loading"||(!force&&remoteState==="ready"))return;
@@ -1547,7 +1549,7 @@
     const st=shop.stats(d),lead=Object.entries(st).filter(([,v])=>v.likes>0).sort((a,b)=>(b[1].likes-b[1].passes)-(a[1].likes-a[1].passes)).slice(0,6);
     $("discTaste").innerHTML='<strong>Seu gosto em evolução</strong><p>'+liked.length+' curtidas · '+d.votes.filter(v=>!v.liked).length+' rejeições</p>'+(lead.length?'<div class="disc-tags">'+lead.map(([k,v])=>'<span>'+E(styleLabel[k])+' · '+v.likes+' ♥</span>').join("")+'</div>':'<p>As escolhas vão revelar novos estilos.</p>');
     if(tab==="feed"){
-      const all=options();current=all.find(p=>p.id===current?.id)||all[0]||null;$("discCount").textContent=all.length+" opções ainda não avaliadas";$("discCard").innerHTML=current?tile(current):'<div class="disc-body"><h2>Nenhuma peça nos filtros</h2><p>'+(source==="catalog"&&!d.catalog.length?"Importe um catálogo real ou explore inspirações.":"Altere os filtros ou reveja as peças puladas.")+'</p></div>';
+      const all=options();current=all.find(p=>p.id===current?.id)||all[0]||null;$("discCount").textContent=all.length+" opções ainda não avaliadas · "+(audienceLabel[f.audience]||"Todos");$("discCard").innerHTML=current?tile(current):'<div class="disc-body"><h2>Nenhuma peça nos filtros</h2><p>'+(source==="catalog"&&!d.catalog.length?"Importe um catálogo real ou explore inspirações.":"Altere os filtros ou reveja as peças puladas.")+'</p></div>';
       $("discLike").disabled=!current;$("discPass").disabled=!current;$("discUndo").disabled=!history.length;
     }else{
       const saved=liked.slice().reverse().map(v=>{const p=stored(v.item),h=shop.track(d,v.id)?.history||[];if(p&&h.length)p.price=h[h.length-1].price;return p}).filter(p=>p&&(radarMode!=="alerts"||p.offerAvailable!==false&&shop.signal(shop.track(d,p.id))?.fresh));
@@ -1577,13 +1579,13 @@
     if((n.min!==""&&Number(n.min)<0)||(n.max!==""&&Number(n.max)<0)||(n.min!==""&&n.max!==""&&Number(n.min)>Number(n.max))){notify("Confira o intervalo de preço.");return}
     n.avoidSimilar=$("discAvoidSimilar").checked;n.gapsOnly=$("discGaps").checked;n.hasLooks=$("discHasLooks").checked;f=n;current=null;render();$("discFilters").open=false;
   }
-  function reset(){f=blank();for(const id of ["discStyles","discGroups","discColors"])$(id).querySelectorAll("input").forEach(i=>i.checked=false);for(const k of fields)$("disc-"+k).value=f[k];for(const id of ["discAvoidSimilar","discGaps","discHasLooks"])$(id).checked=false;current=null;render()}
+  function reset(){f=blank();f.audience=profileAudience();lastAudience=f.audience;for(const id of ["discStyles","discGroups","discColors"])$(id).querySelectorAll("input").forEach(i=>i.checked=false);for(const k of fields)$("disc-"+k).value=f[k];for(const id of ["discAvoidSimilar","discGaps","discHasLooks"])$(id).checked=false;current=null;render()}
   function mount(){
     if(mounted)return;mounted=true;source="catalog";
     document.querySelector(".nav-list").insertAdjacentHTML("beforeend",'<button class="nav-btn" data-route="discover"><span class="nav-icon">◇</span> Descobrir</button>');
     document.querySelector(".mobile-nav").insertAdjacentHTML("beforeend",'<button data-route="discover"><span>◇</span>Descobrir</button>');
-    document.querySelector(".main-content").insertAdjacentHTML("beforeend",'<section class="view" id="view-discover"><div class="page-heading"><div><div class="eyebrow">VESTE / RADAR</div><h1>Descobrir<span class="period">.</span></h1><p>Seu estilo, novas possibilidades.</p></div></div><div class="disc-tabs"><button class="btn btn-dark" id="discFeedBtn">Explorar</button><button class="btn btn-outline" id="discSavedBtn">♡ Radar</button></div><div class="panel disc-taste" id="discTaste"></div><div id="discFeed"><div class="panel disc-controls"><input type="hidden" id="discMode" value="catalog"><p id="discTip"></p><button type="button" class="text-button" id="discRefreshCatalog">Atualizar ofertas</button><details id="discFilters"><summary>Ajustar descoberta</summary><label>Pesquisar<input id="disc-query" placeholder="Ex.: coturno, couro, linho"></label><label>Público<select id="disc-audience"></select></label><h3>Estilos — selecione vários</h3><div class="disc-chips" id="discStyles"></div><h3>Categoria</h3><div class="disc-chips" id="discGroups"></div><h3>Cor</h3><div class="disc-chips" id="discColors"></div><h3>Comprar melhor</h3><div class="disc-smart"><label><input type="checkbox" id="discAvoidSimilar"> Evitar peças semelhantes</label><label><input type="checkbox" id="discGaps"> Mostrar lacunas do closet</label><label><input type="checkbox" id="discHasLooks"> Apenas com combinações possíveis</label></div><label>Modo de descoberta<select id="disc-order"><option value="match">Mais relevante para mim</option><option value="explore">Explorar novos estilos</option><option value="cheap">Menor preço (catálogo)</option><option value="expensive">Maior preço (catálogo)</option></select></label><div id="discCommercial"><h3>Orçamento (R$)</h3><div class="disc-price"><label>Mínimo<input id="disc-min" type="number" min="0" placeholder="0"></label><label>Máximo<input id="disc-max" type="number" min="0" placeholder="Sem limite"></label></div><label>Tamanho<select id="disc-size"></select></label><label>Ocasião<select id="disc-occasion"></select></label><label>Marca ou loja<input id="disc-brand" placeholder="Todas"></label><p>Itens sem preço, tamanho ou ocasião declarados ficam de fora quando esses filtros são usados.</p></div><div class="disc-tabs"><button class="btn btn-dark" id="discApply">Aplicar filtros</button><button class="btn btn-outline" id="discReset">Limpar</button></div></details></div><p id="discCount"></p><article class="disc-card" id="discCard"></article><div class="disc-actions"><button class="btn btn-outline" id="discPass">✕ Pular</button><button class="btn btn-outline" id="discUndo" aria-label="Desfazer">↶</button><button class="btn btn-dark" id="discLike">♡ Gostei</button></div><p class="disc-hint">Deslize à esquerda para pular ou à direita para curtir.</p></div><div id="discSaved" hidden><h2>Meu radar de compras</h2><p>Suas escolhas salvas, com links para visitar depois.</p><div class="panel disc-taste"><p id="discAlerts" role="status"></p><label>Mostrar<select id="discRadarMode"><option value="all">Todas as curtidas</option><option value="alerts">Somente novos alertas de preço</option><option value="value">Maior índice VESTE</option><option value="cost">Menor custo por combinação</option></select></label></div><div id="discGrid"></div><button class="text-button" id="discRevisit">Rever peças que pulei</button></div></section>');
-    opts("disc-audience",audienceLabel,"Todos");const sizes=["PP","P","M","G","GG","XGG",...Array.from({length:23},(_,i)=>String(34+i)),"Único"];opts("disc-size",Object.fromEntries(sizes.map(x=>[x,x])),"Todos");opts("disc-occasion",OCCASIONS,"Todas");
+    document.querySelector(".main-content").insertAdjacentHTML("beforeend",'<section class="view" id="view-discover"><div class="page-heading"><div><div class="eyebrow">VESTE / RADAR</div><h1>Descobrir<span class="period">.</span></h1><p>Seu estilo, novas possibilidades.</p></div></div><div class="disc-tabs"><button class="btn btn-dark" id="discFeedBtn">Explorar</button><button class="btn btn-outline" id="discSavedBtn">♡ Radar</button></div><div class="panel disc-taste" id="discTaste"></div><div id="discFeed"><div class="panel disc-controls"><input type="hidden" id="discMode" value="catalog"><p id="discTip"></p><button type="button" class="text-button" id="discRefreshCatalog">Atualizar ofertas</button><details id="discFilters"><summary>Ajustar descoberta</summary><label>Pesquisar<input id="disc-query" placeholder="Ex.: coturno, couro, linho"></label><label>Público<select id="disc-audience"></select></label><h3>Estilos — selecione vários</h3><div class="disc-chips" id="discStyles"></div><h3>Categoria</h3><div class="disc-chips" id="discGroups"></div><h3>Cor</h3><div class="disc-chips" id="discColors"></div><h3>Comprar melhor</h3><div class="disc-smart"><label><input type="checkbox" id="discAvoidSimilar"> Evitar peças semelhantes</label><label><input type="checkbox" id="discGaps"> Mostrar lacunas do closet</label><label><input type="checkbox" id="discHasLooks"> Apenas com combinações possíveis</label></div><label>Modo de descoberta<select id="disc-order"><option value="match">Mais relevante para mim</option><option value="explore">Explorar novos estilos</option><option value="cheap">Menor preço (catálogo)</option><option value="expensive">Maior preço (catálogo)</option></select></label><div id="discCommercial"><h3>Orçamento (R$)</h3><div class="disc-price"><label>Mínimo<input id="disc-min" type="number" min="0" placeholder="0"></label><label>Máximo<input id="disc-max" type="number" min="0" placeholder="Sem limite"></label></div><label>Tamanho<select id="disc-size"></select></label><label>Ocasião<select id="disc-occasion"></select></label><label>Marca ou loja<input id="disc-brand" placeholder="Todas"></label><p>Itens sem preço, tamanho ou ocasião declarados ficam de fora quando esses filtros são usados.</p></div><div class="disc-tabs"><button class="btn btn-dark" id="discApply">Aplicar filtros</button><button class="btn btn-outline" id="discReset">Restaurar padrão</button></div></details></div><p id="discCount"></p><article class="disc-card" id="discCard"></article><div class="disc-actions"><button class="btn btn-outline" id="discPass">✕ Pular</button><button class="btn btn-outline" id="discUndo" aria-label="Desfazer">↶</button><button class="btn btn-dark" id="discLike">♡ Gostei</button></div><p class="disc-hint">Deslize à esquerda para pular ou à direita para curtir.</p></div><div id="discSaved" hidden><h2>Meu radar de compras</h2><p>Suas escolhas salvas, com links para visitar depois.</p><div class="panel disc-taste"><p id="discAlerts" role="status"></p><label>Mostrar<select id="discRadarMode"><option value="all">Todas as curtidas</option><option value="alerts">Somente novos alertas de preço</option><option value="value">Maior índice VESTE</option><option value="cost">Menor custo por combinação</option></select></label></div><div id="discGrid"></div><button class="text-button" id="discRevisit">Rever peças que pulei</button></div></section>');
+    opts("disc-audience",audienceLabel,"Todos");$("disc-audience").value=f.audience=profileAudience();lastAudience=f.audience;const sizes=["PP","P","M","G","GG","XGG",...Array.from({length:23},(_,i)=>String(34+i)),"Único"];opts("disc-size",Object.fromEntries(sizes.map(x=>[x,x])),"Todos");opts("disc-occasion",OCCASIONS,"Todas");
     createChecks("discStyles",styleLabel);createChecks("discGroups",GROUPS);createChecks("discColors",Object.fromEntries(Object.entries(COLORS).map(([k,v])=>[k,v.name])));
     $("discRadarMode").onchange=e=>{radarMode=e.target.value;render()};
     $("discGrid").addEventListener("click",e=>{const b=e.target.closest("[data-daction]");if(!b||!cloud.canEnter())return;const d=data(),v=d.votes.find(v=>v.liked&&v.id===b.dataset.id);if(!v||v.item?.source!=="catalog")return;
@@ -1605,7 +1607,8 @@
     const oldNavigate=navigate;navigate=function(route){if(route!=="discover")return oldNavigate(route);if(remoteState!=="loading"&&Date.now()-remoteChecked>15*60*1000)loadRemote(true).catch(()=>{});state.view=route;document.querySelectorAll(".view").forEach(el=>el.classList.toggle("active",el.id==="view-discover"));document.querySelectorAll("[data-route]").forEach(el=>el.classList.toggle("active",el.dataset.route===route));$("topbarTitle").textContent="SEU RADAR";render();window.scrollTo({top:0,behavior:"smooth"})};
     const oldRender=renderAll;renderAll=function(){oldRender();if(state.view==="discover")render()};
   }
-  return {mount,loadRemote,normalize,parsePrice,matches,csv,blank,seeds,styleLabel,shop};
+  function useProfile(force=false){if(!mounted)return;const next=profileAudience();if(!force&&next===lastAudience)return;lastAudience=next;f.audience=next;$("disc-audience").value=next;current=null;render()}
+  return {mount,loadRemote,normalize,parsePrice,matches,csv,blank,seeds,styleLabel,shop,useProfile};
 }
 
   const TRASH_WINDOW=30*86400000;
@@ -1711,7 +1714,7 @@
     banner.className='panel';banner.id='usageConsent';banner.style.margin='12px 0';
     banner.innerHTML='<h3>Ajude a melhorar o VESTE</h3><p class="note">Deseja compartilhar estatísticas básicas de navegação? Isso é opcional e não inclui seu closet ou suas fotos.</p><div class="v3actions"><button type="button" class="btn" data-usage="yes">Permitir</button><button type="button" class="btn btn-outline" data-usage="no">Agora não</button></div>';
     $('view-home')?.prepend(banner);
-    const allowed=()=>choice==='yes'&&cloud.canEnter()&&!document.documentElement.classList.contains('auth-locked');
+    const allowed=()=>choice==='yes'&&cloud.canEnter()&&!document.documentElement.classList.contains('auth-locked')&&!document.documentElement.classList.contains('v74-profile-gate');
     const persist=()=>{try{sessionStorage.setItem(sessionKey,JSON.stringify(session))}catch{}};
     const update=()=>{checkbox.checked=choice==='yes';banner.hidden=choice==='yes'||choice==='no'};
     function setChoice(next){choice=next;try{localStorage.setItem(key,next)}catch{};if(next!=='yes'){session=null;lastSent='';try{sessionStorage.removeItem(sessionKey)}catch{}}update();if(next==='yes')capture(state.view,true)}
@@ -1731,6 +1734,107 @@
     document.addEventListener('pointerdown',touch,{passive:true});document.addEventListener('keydown',touch,{passive:true});
     update();capture(state.view,true);
   }
+
+
+  // V7.4 — account-scoped, synchronized preferences. Identity is optional and
+  // never determines access to clothes; the independently selected audience does.
+  const PROFILE_STYLE_PHOTOS={"elegante":["https://images.unsplash.com/photo-1793087160426-b4e6bca37027?auto=format&fit=crop&w=760&h=940&q=78","Andrej Ermakov","https://unsplash.com/photos/aCXtlISvibM"],"classico":["https://images.unsplash.com/photo-1584273143981-41c073dfe8f8?auto=format&fit=crop&w=760&h=940&q=78","Nassim Boughazi","https://unsplash.com/photos/dodzmVtjoKs"],"minimalista":["https://images.unsplash.com/photo-1759229874914-c1ffdb3ebd0c?auto=format&fit=crop&w=760&h=940&q=78","MANITO SILK","https://unsplash.com/photos/rz3sw-8VNCw"],"urbano":["https://images.unsplash.com/photo-1773236175248-c780354a5b7a?auto=format&fit=crop&w=760&h=940&q=78","Bien'arts","https://unsplash.com/photos/jdLwOut7p68"],"alternativo":["https://images.unsplash.com/photo-1762554559790-ee9f9f223b05?auto=format&fit=crop&w=760&h=940&q=78","Marlon Alves","https://unsplash.com/photos/b27mXikvz8U"],"criativo":["https://images.unsplash.com/photo-1764698192455-9ee9d80d22a9?auto=format&fit=crop&w=760&h=940&q=78","sammy swae","https://unsplash.com/photos/z0ma-JM-Qe4"],"romantico":["https://images.unsplash.com/photo-1787504734584-3c802fca7f19?auto=format&fit=crop&w=760&h=940&q=78","Sou Jest","https://unsplash.com/photos/92_WJn93XRY"],"esportivo":["https://images.unsplash.com/photo-1790725567955-f8bd9db27bad?auto=format&fit=crop&w=760&h=940&q=78","Praise Judah","https://unsplash.com/photos/UcEZ8VWpojQ"],"casual":["https://images.unsplash.com/photo-1749481520410-63507db801e7?auto=format&fit=crop&w=760&h=940&q=78","lhon karwan","https://unsplash.com/photos/bvrEKowCxFo"],"noturno":["https://images.unsplash.com/photo-1775510110825-aa724db6502c?auto=format&fit=crop&w=760&h=940&q=78","lhon karwan","https://unsplash.com/photos/Sqa2MhCDNMA"]};
+  const PROFILE_GENDERS={homem:'Homem',mulher:'Mulher',nao_binario:'Não binário',nao_informar:'Prefiro não informar'};
+  const PROFILE_AUDIENCES={masculino:'Masculino',feminino:'Feminino',ambos:'Todos os estilos de vestuário',unissex:'Unissex'};
+  function personalProfile(input){
+    const x=input&&typeof input==='object'&&!Array.isArray(input)?input:{};
+    const allowed=(v,o)=>typeof v==='string'&&Object.hasOwn(o,v)?v:'';
+    const str=(v,n)=>typeof v==='string'?v.trim().slice(0,n):'';
+    const keys=(v,o)=>Array.isArray(v)?[...new Set(v.filter(k=>typeof k==='string'&&Object.hasOwn(o,k)))]:[];
+    const audience=allowed(x.audience,PROFILE_AUDIENCES);
+    return {version:1,complete:x.complete===true&&!!audience,gender:allowed(x.gender,PROFILE_GENDERS)||'nao_informar',audience,clothingSize:str(x.clothingSize,30),shoeSize:str(x.shoeSize,30),colors:keys(x.colors,COLORS),occasions:keys(x.occasions,OCCASIONS),avoid:str(x.avoid,240),goal:str(x.goal,240),budget:x.budget!==''&&x.budget!=null&&Number.isFinite(Number(x.budget))&&Number(x.budget)>=0&&Number(x.budget)<=100000?String(Number(x.budget)):''};
+  }
+  const profile=()=>personalProfile(state.settings.personalProfile);
+  const profileAudience=()=>({masculino:'masculino',feminino:'feminino',unissex:'unissex'})[profile().audience]||'';
+  function profileContext(){
+    const p=profile();return {preferencia_de_vestuario:PROFILE_AUDIENCES[p.audience]||'Não definida',cores_favoritas:p.colors.map(k=>COLORS[k].name),ocasioes:p.occasions.map(k=>OCCASIONS[k]),evitar:p.avoid,objetivo:p.goal};
+  }
+  function profileAffinity(p){
+    const x=profile();return x.colors.includes(p.color)?3:0;
+  }
+  function profileShoppingAffinity(p){
+    const x=profile(),size=(p.group==='shoes'?x.shoeSize:x.clothingSize).toLocaleLowerCase('pt-BR');
+    return profileAffinity(p)+(size&&Array.isArray(p.sizes)&&p.sizes.some(v=>String(v).trim().toLocaleLowerCase('pt-BR')===size)?5:0)+(x.budget!==''&&Number.isFinite(p.price)&&p.price<=Number(x.budget)?4:0)+(Array.isArray(p.occasion)&&p.occasion.some(k=>x.occasions.includes(k))?3:0);
+  }
+  const personalization=(()=>{
+    let mounted=false,open=false,mandatory=false,step=0,draft=null,styles=[],waiting=false;
+    const E=escapeHTML;
+    const choice=(name,opts,value)=>Object.entries(opts).map(([k,v])=>'<label class="v74-choice"><input type="radio" name="'+name+'" value="'+E(k)+'" '+(value===k?'checked':'')+'><span>'+E(v)+'</span></label>').join('');
+    const checks=(name,opts,values)=>Object.entries(opts).map(([k,v])=>'<label class="v74-choice"><input type="checkbox" name="'+name+'" value="'+E(k)+'" '+(values.includes(k)?'checked':'')+'><span>'+E(v)+'</span></label>').join('');
+    function capture(){
+      const root=$('v74Step');if(!root||!draft)return;
+      const values=n=>Array.from(root.querySelectorAll('input[name="'+n+'"]:checked')).map(el=>el.value);
+      if(step===1){const g=values('v74gender')[0];if(g&&g!==draft.gender){draft.gender=g;if(!draft.audience)draft.audience=g==='homem'?'masculino':g==='mulher'?'feminino':'ambos'}}
+      if(step===2)draft.audience=values('v74audience')[0]||draft.audience;
+      if(step===3)styles=values('v74styles');
+      if(step===4){
+        for(const k of ['clothingSize','shoeSize','budget','avoid','goal'])draft[k]=$('v74-'+k)?.value||'';
+        draft.colors=values('v74colors');draft.occasions=values('v74occasions');
+      }
+    }
+    function show(){
+      document.documentElement.classList.toggle('v74-profile-gate',waiting||open);
+      $('v74Gate').hidden=!waiting&&!open;
+      if(waiting&&!open){$('v74Step').innerHTML='<p class="eyebrow">VESTE / SEU ESPAÇO</p><h1>Preparando seu perfil<span class="period">.</span></h1><p>Estamos verificando suas preferências na nuvem para não substituir seus dados.</p><p class="note">Se estiver sem conexão, conecte-se à internet e tente novamente.</p>';$('v74Progress').textContent='';$('v74Back').hidden=true;$('v74Next').textContent='Tentar novamente';$('v74Cancel').hidden=true;return}
+      if(!open)return;
+      $('v74Progress').textContent=String(step+1).padStart(2,'0')+' / 05';
+      const headings=['Seu estilo começa aqui.','Conte sobre você.','O que você gosta de vestir?','Qual é o seu estilo?','Seu perfil, seus detalhes.'];
+      let html='<p class="eyebrow">VESTE / SEU ESTILO</p><h1>'+E(headings[step])+'</h1>';
+      if(step===0)html+='<p>Um guarda-roupa que faz sentido para você, e não o contrário. Vamos ajustar sua experiência antes de explorar o VESTE.</p><div class="v74-editorial"><span>✳</span><strong>Vista-se de você.</strong><small>Seu closet. Suas escolhas.</small></div>';
+      if(step===1)html+='<p>Como você se identifica? Essa informação é opcional e fica somente nas suas preferências.</p><div class="v74-options">'+choice('v74gender',PROFILE_GENDERS,draft.gender)+'</div>';
+      if(step===2)html+='<p>Esta escolha define o filtro inicial de Descobrir. Você pode mudá-lo a qualquer momento, independentemente da sua identidade.</p><div class="v74-options">'+choice('v74audience',PROFILE_AUDIENCES,draft.audience)+'</div>';
+      if(step===3)html+='<p>Selecione os estilos que você gosta. Você também pode descobrir seu estilo aos poucos.</p><div class="v74-style-grid">'+Object.entries(STYLES).map(([k,label])=>{const pic=PROFILE_STYLE_PHOTOS[k];return '<div class="v74-style-tile"><label class="v74-choice v74-style-choice">'+(pic?'<img loading="lazy" decoding="async" src="'+E(pic[0])+'" alt="Referência de '+E(label)+'">':'')+'<input type="checkbox" name="v74styles" value="'+E(k)+'" '+(styles.includes(k)?'checked':'')+'><span>'+E(label)+'</span></label>'+(pic?'<a class="v7-style-credit" href="'+E(pic[2])+'" target="_blank" rel="noopener noreferrer">Foto: '+E(pic[1])+' · Unsplash</a>':'')+'</div>'}).join('')+'</div><small class="note">São referências de expressão e não regras de vestuário.</small>';
+      if(step===4)html+='<p>Você pode deixar tudo em branco e completar depois no Perfil.</p><div class="v74-fields"><label>Tamanho de roupas<input id="v74-clothingSize" maxlength="30" placeholder="Ex.: M ou 40" value="'+E(draft.clothingSize)+'"></label><label>Tamanho de calçados<input id="v74-shoeSize" maxlength="30" placeholder="Ex.: 38" value="'+E(draft.shoeSize)+'"></label><label>Orçamento por peça (R$)<input id="v74-budget" type="number" min="0" max="100000" step=".01" value="'+E(draft.budget)+'"></label><label>O que você prefere evitar?<textarea id="v74-avoid" maxlength="240" placeholder="Ex.: modelagens muito justas">'+E(draft.avoid)+'</textarea></label><label>Seu objetivo de imagem<textarea id="v74-goal" maxlength="240" placeholder="Ex.: looks de trabalho mais versáteis">'+E(draft.goal)+'</textarea></label></div><h3>Cores favoritas</h3><div class="v74-options">'+checks('v74colors',Object.fromEntries(Object.entries(COLORS).map(([k,v])=>[k,v.name])),draft.colors)+'</div><h3>Ocasiões frequentes</h3><div class="v74-options">'+checks('v74occasions',OCCASIONS,draft.occasions)+'</div>';
+      $('v74Step').innerHTML=html;$('v74Error').textContent='';$('v74Back').hidden=step===0;$('v74Cancel').hidden=mandatory;$('v74Next').textContent=step===0?'Começar':step===4?(mandatory?'Conhecer meu VESTE':'Salvar perfil'):'Continuar';
+      $('v74Gate').scrollTop=0;
+    }
+    function begin(required){
+      if(open)return;waiting=false;mandatory=required;open=true;step=required?0:1;draft=profile();
+      if(!draft.complete){draft.gender='nao_informar';draft.audience=''}
+      styles=[...(state.settings.prefs||[])].filter(k=>Object.hasOwn(STYLES,k));if(!draft.complete&&!state.pieces.length&&!Object.keys(state.settings.v3?.ratings||{}).length&&styles.join('|')==='casual|elegante')styles=[];show();
+    }
+    function finish(){
+      const value=personalProfile({...draft,complete:true});if(!value.complete){step=2;show();return}
+      const before=profileAudience();state.settings.personalProfile=value;state.settings.prefs=styles;state.resultsGenerated=false;
+      // Do not reset or remove closet pieces, ratings, radar, favorites or history.
+      saveLocal();open=false;waiting=false;show();renderPanel();discovery.useProfile(before!==profileAudience());renderAll();if(mandatory)navigate('home');notify('Seu perfil foi salvo.');
+    }
+    function reconcile({ready=false,conflict=false,existing=false}={}){
+      if(!mounted)return;
+      renderPanel();
+      // Never gate recovery/conflict resolution or ask an already-completed user again.
+      if(open&&!mandatory)return;
+      if(profile().complete||conflict){const changed=waiting||open;waiting=false;open=false;if(changed)show();discovery.useProfile(false);return}
+      if(ready){if(existing&&!open){waiting=false;show();renderPanel();return}if(!open)begin(true);return}
+      if(!open&&!waiting){waiting=true;show()}
+    }
+    function renderPanel(){
+      const root=$('v74ProfilePanel');if(!root)return;const p=profile();
+      root.querySelector('[data-v74-summary]').textContent=p.complete?(PROFILE_AUDIENCES[p.audience]||'Todos')+(p.clothingSize?' · Roupa '+p.clothingSize:'')+(p.shoeSize?' · Calçado '+p.shoeSize:''):'Personalize as descobertas e recomendações do VESTE.';
+      root.querySelector('[data-v74-edit]').textContent=p.complete?'Editar meu perfil':'Configurar meu perfil';const welcome=$('v74HomePrompt');if(welcome)welcome.hidden=p.complete;
+    }
+    function mount(){
+      if(mounted)return;mounted=true;
+      const panel=document.createElement('section');panel.id='v74ProfilePanel';panel.className='panel';
+      panel.innerHTML='<p class="eyebrow">VESTE / PERSONALIZAÇÃO</p><h2>Seu perfil pessoal</h2><p data-v74-summary></p><p class="note">O filtro de vestuário é uma preferência, nunca uma restrição. Edite ou remova suas informações opcionais quando quiser.</p><button type="button" class="btn btn-outline" data-v74-edit>Configurar meu perfil</button>';
+      $('view-style').querySelector('.page-heading').insertAdjacentElement('afterend',panel);panel.querySelector('[data-v74-edit]').onclick=()=>begin(false);
+      const welcome=document.createElement('section');welcome.id='v74HomePrompt';welcome.className='panel';welcome.innerHTML='<p class="eyebrow">SEU PERFIL VESTE</p><h3>Descubra de um jeito mais seu.</h3><p>Personalize o filtro de vestuário e as recomendações sem alterar as roupas que você já cadastrou.</p><button type="button" class="btn btn-outline" id="v74HomeEdit">Configurar meu perfil</button>';const today=$('todayPanel');if(today)today.insertAdjacentElement('beforebegin',welcome);else $('view-home').prepend(welcome);$('v74HomeEdit').onclick=()=>begin(false);
+      const root=document.createElement('section');root.id='v74Gate';root.className='v74-gate';root.hidden=true;root.setAttribute('aria-label','Personalização do VESTE');
+      root.innerHTML='<div class="v74-wrap"><div class="v74-brand"><div class="brand"><span class="brand-mark">✳</span><span>VESTE<span class="brand-dot">.</span></span></div><span id="v74Progress" class="eyebrow"></span></div><div id="v74Step"></div><p id="v74Error" role="alert" class="note"></p><div class="v74-buttons"><button type="button" id="v74Back" class="btn btn-outline">Voltar</button><button type="button" id="v74Next" class="btn btn-dark">Continuar</button></div><button type="button" id="v74Cancel" class="text-button">Cancelar edição</button><button type="button" id="v74Logout" class="text-button">Sair da conta</button></div>';
+      document.body.appendChild(root);
+      $('v74Logout').onclick=()=>{$('cloudLogout').click()};
+      $('v74Cancel').onclick=()=>{if(!mandatory){open=false;show()}};
+      $('v74Back').onclick=()=>{capture();step=Math.max(0,step-1);show()};
+      $('v74Next').onclick=()=>{if(waiting&&!open){$('cloudSync').click();return}if(!open)return;capture();if(step===2&&!draft.audience){$('v74Error').textContent='Selecione o vestuário que deseja explorar.';return}if(step===4){if(!$('v74-budget').checkValidity()){$('v74-budget').reportValidity();return}finish();return}step++;show()};
+      renderPanel();
+    }
+    return {mount,reconcile,renderPanel};
+  })();
 
   const discovery=discoveryFeature();
   const cloud=makeCloud();
