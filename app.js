@@ -162,7 +162,8 @@
   function renderAll(){renderHome();renderCloset();renderLooks();renderWeek();if(state.view==='style'){renderStyle();renderAdvanced()}}
   function savePreferences(){state.settings.prefs=Array.from($('styleOptions').querySelectorAll('input:checked')).map(i=>i.value);saveLocal();state.resultsGenerated=false;notify('Seu estilo foi salvo. As próximas sugestões considerarão suas escolhas.')}
   function resetFeedback(){if(!confirm('Limpar todas as curtidas e rejeições? Os favoritos serão mantidos.'))return;state.settings.loved=[];state.settings.rejected=[];saveLocal();state.resultsGenerated=false;renderStyle();notify('Feedback limpo.')} 
-  async function exportBackup(){const data={app:'veste',version:1,exportedAt:new Date().toISOString(),pieces:await dbGetAll(),settings:cloud.defaults(state.settings)};const blob=new Blob([JSON.stringify(data)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`veste-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);notify('Backup exportado. Guarde o arquivo em local seguro.')}
+  async function exportBackup(){downloadBackup(await dbGetAll(),cloud.defaults(state.settings))}
+  function downloadBackup(pieces,settings){const data={app:'veste',version:1,exportedAt:new Date().toISOString(),pieces,settings};const blob=new Blob([JSON.stringify(data)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`veste-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);notify('Backup exportado. Guarde o arquivo em local seguro.')}
   async function importBackup(e){const f=e.target.files?.[0];e.target.value='';if(!f)return;try{const raw=await f.text();if(raw.length>90*1024*1024)throw new Error('Arquivo de backup grande demais.');const d=JSON.parse(raw);if(d.app!=='veste'||!Array.isArray(d.pieces)||d.pieces.length>2000||!d.settings||typeof d.settings!=='object'||Array.isArray(d.settings)||new Set(d.pieces.map(p=>p?.id)).size!==d.pieces.length||d.pieces.some(p=>!p||typeof p.id!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(p.id)||typeof p.name!=='string'||!Object.hasOwn(GROUPS,p.group)||typeof p.image!=='string'||!/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(p.image)))throw new Error('O arquivo não é um backup válido do VESTE.');if(!confirm(`Restaurar ${d.pieces.length} peças? Isso substituirá o closet e as preferências atuais neste dispositivo.`))return;
     await dbReplace(d.pieces);state.settings={...cloud.defaults(d.settings),prefs:Array.isArray(d.settings.prefs)?d.settings.prefs:[],loved:Array.isArray(d.settings.loved)?d.settings.loved:[],rejected:Array.isArray(d.settings.rejected)?d.settings.rejected:[],favorites:Array.isArray(d.settings.favorites)?d.settings.favorites:[],wearHistory:Array.isArray(d.settings.wearHistory)?d.settings.wearHistory:[]};delete state.settings.aiKey;delete state.settings.apiKey;if(!state.settings.v3||typeof state.settings.v3!=='object'||Array.isArray(state.settings.v3))state.settings.v3={};saveLocal();state.resultsGenerated=false;await refreshPieces();renderStyle();renderAdvanced();notify('Backup restaurado com sucesso!')
   }catch(err){notify(err.message||'Falha ao restaurar backup.')}}
@@ -781,6 +782,21 @@
       remote.push({...manifest(p),image});
     }return remote;
   }
+  async function listVersions(){
+    const uid=kid(),c=await sessionClient();
+    const {data,error}=await c.from('veste_closet_versions').select('revision,saved_at').eq('user_id',uid).order('saved_at',{ascending:false}).limit(50);
+    if(error)throw error;
+    if(uid!==kid())throw Error('Sessão alterada.');
+    return data||[];
+  }
+  async function exportVersion(revision){
+    const uid=kid(),c=await sessionClient();
+    const {data,error}=await c.from('veste_closet_versions').select('pieces,settings').eq('user_id',uid).eq('revision',revision).single();
+    if(error)throw error;
+    const pcs=await pullPieces(c,uid,data);
+    if(uid!==kid()||!cloud.canEnter())throw Error('Sessão alterada.');
+    downloadBackup(pcs.filter(p=>!p.deletedAt||trashAvailable(p)),defaults(data.settings));
+  }
   async function sync(manual=false,force=null){
     if(!ready||!user||busy||recovery||!navigator.onLine||!idle()){if(manual)msg('Conecte-se à internet e feche a edição de peças para sincronizar.');return}
     if(meta.conflict&&!force){render();return}
@@ -803,7 +819,7 @@
         }finally{applying=false;if(shell)shell.inert=false;if(nav)nav.inert=false}
         msg('Versão da nuvem carregada: '+pcs.length+' peças.');return;
       }
-      const pcs=await dbGetAll(),settings=defaults(state.settings);
+      const pcs=(await dbGetAll()).filter(p=>!p.deletedAt||trashAvailable(p)),settings=defaults(state.settings);
       if(pcs.length>2000)throw new Error('Limite de 2.000 peças por closet.');
       const items=await uploadManifest(c,uid,pcs,row);
       if(!ready||kid()!==uid)throw new Error('Sessão alterada durante a sincronização.');
@@ -918,7 +934,7 @@
   }
   function start(){ready=true;if(user&&!hadMeta&&state.pieces.length){meta.dirty=true;try{persist()}catch{}}render();if(user){schedule(100);window.addEventListener('online',()=>schedule(50));window.addEventListener('focus',()=>schedule(500));window.addEventListener('offline',render);setInterval(()=>{if(document.visibilityState==='visible'&&idle())sync(false)},30000);setInterval(()=>{if(ready&&user&&sessionExpiry&&sessionExpiry<=Date.now()/1000&&!navigator.onLine){ready=false;clearTimeout(timer);document.querySelectorAll('dialog[open]').forEach(d=>d.close());bootError='Sua sessão expirou. Conecte-se à internet e atualize a página para entrar novamente.';render()}},15000)}}
   function fail(message){ready=false;bootError=message;render()}
-  return {prepare,mount,start,touch,catalogClient:sessionClient,account:()=>!!user,canEnter:()=>!!user&&!recovery,fail,defaults,classify,validPath,screenFrom,passwordError,authError};
+  return {prepare,mount,start,touch,catalogClient:sessionClient,listVersions,exportVersion,account:()=>!!user,canEnter:()=>!!user&&!recovery,fail,defaults,classify,validPath,screenFrom,passwordError,authError};
 }
   function bulkCloset(){
   let rows=[],busy=false,stopped=false,run=0,phase='',message='',comparisonBusy=false,page=0,filter='all';
@@ -1536,6 +1552,16 @@
     $('p0Export').onclick=()=>exportBackup().catch(e=>notify(e.message||'Não foi possível exportar.'));
     $('p0Import').onclick=()=>$('p0File').click();
     $('p0File').onchange=importBackup;
+    const versions=document.createElement('details');
+    versions.innerHTML='<summary>Histórico automático de versões</summary><p class="note">As versões anteriores ficam disponíveis por 30 dias. Baixe a versão desejada e use Restaurar arquivo para recuperá-la. As fotos dependem do armazenamento protegido do VESTE.</p><button type="button" class="btn btn-outline" id="p0VersionsRefresh">Consultar versões</button><div id="p0VersionsList" aria-live="polite"></div>';
+    root.append(versions);
+    const loadVersions=async()=>{const list=$('p0VersionsList'),button=$('p0VersionsRefresh');button.disabled=true;list.textContent='Consultando…';try{
+      const rows=await cloud.listVersions();list.replaceChildren();
+      if(!rows.length){list.textContent='Nenhuma versão disponível.';return}
+      for(const row of rows){const item=document.createElement('div');item.className='favorite-row';const label=document.createElement('span');label.textContent='Versão '+row.revision+' · '+new Date(row.saved_at).toLocaleString('pt-BR');const download=document.createElement('button');download.type='button';download.className='btn btn-outline';download.textContent='Baixar';download.onclick=async()=>{download.disabled=true;try{await cloud.exportVersion(row.revision)}catch(e){notify(e.message||'Não foi possível baixar a versão.')}finally{download.disabled=false}};item.append(label,download);list.append(item)}
+    }catch(e){list.textContent='Histórico indisponível: '+(e.message||'Tente novamente.')}finally{button.disabled=false}};
+    $('p0VersionsRefresh').onclick=loadVersions;
+    versions.addEventListener('toggle',()=>{if(versions.open)loadVersions()});
   }
   function experienceV7(){
     const by=id=>document.getElementById(id);
