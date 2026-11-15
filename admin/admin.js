@@ -17,8 +17,8 @@ async function refresh(){
  table("partners",["Parceiro","Produtos","Disponíveis","Última atualização"],(d.partners||[]).map(x=>[x.shop,x.products,x.available,date(x.synced_at)]));
  table("daily",["Data UTC","Acessos únicos por peça/minuto"],(d.daily_clicks||[]).map(x=>[x.day,x.clicks]));
  table("sync",["Processo","Horário","Resultado","Registros","Detalhe"],(d.sync||[]).map(x=>[x.kind,date(x.finished_at),x.ok?"OK":"Falhou",x.records,x.detail]));
- el("reportStatus").textContent=d.report_ready?"Relatório Awin importado. Valores por moeda e status; não equivalem a pagamento recebido.":"Relatório Awin ainda não importado. Não há dados financeiros verificados.";
- table("financial",["Moeda","Status","Transações","Vendas","Comissões"],(d.financial||[]).map(x=>[x.currency,x.status,x.transactions,money(x.sales,x.currency),money(x.commissions,x.currency)]));
+ el("reportStatus").textContent=d.report_ready?"Relatório Awin importado. Apenas transações identificadas pelo VESTE; valores por moeda e status não equivalem a pagamento recebido.":"Relatório Awin ainda não importado. Não há dados financeiros verificados.";
+ table("financial",["Parceiro","Moeda","Status","Transações","Conversões de venda","Vendas","Comissões"],(d.financial||[]).map(x=>[x.shop,x.currency,x.status,x.transactions,x.conversions,money(x.sales,x.currency),money(x.commissions,x.currency)]));
  el("data").hidden=false;msg("Acesso administrativo confirmado.");
  }catch{if(seq===revision)msg("Falha ao consultar o servidor.")}finally{if(seq===revision)el("refresh").disabled=false}
 }
