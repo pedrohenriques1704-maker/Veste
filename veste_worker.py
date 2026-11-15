@@ -114,8 +114,8 @@ def process(api,pipeline,job):
         person=decode_photo(api.get_photo(inputs[0]))
         for i,category in enumerate(categories):
             garment=decode_photo(api.get_photo(inputs[i+1]))
-            print("Etapa",i+1,"/",len(categories),category,flush=True)
-            result=pipeline(person_image=person,garment_image=garment,category=category,garment_photo_type="flat-lay",num_samples=1,num_timesteps=30)
+            print("Etapa",i+1,"/",len(categories),category,"— modo", "original" if i==0 else "com máscara (experimental)",flush=True)
+            result=pipeline(person_image=person,garment_image=garment,category=category,garment_photo_type="flat-lay",num_samples=1,num_timesteps=30,segmentation_free=(i==0))
             person=result.images[0].convert("RGB")
             del result,garment
             if torch.cuda.is_available():
@@ -148,7 +148,7 @@ def main():
     weights=pathlib.Path(__file__).resolve().parent/"weights"
     if not weights.is_dir():
         raise SystemExit("Coloque este arquivo dentro da pasta fashn-vton-1.5.")
-    print("VESTE — provador privado no PC (multicontas)")
+    print("VESTE 4.9 — provador privado no PC (multicontas)")
     print("Cada pessoa deve autorizar sua própria conta VESTE.")
     print("As senhas não serão gravadas. Uma GPU, um pedido por vez.")
     accounts = []
