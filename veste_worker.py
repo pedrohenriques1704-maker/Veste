@@ -148,38 +148,75 @@ def main():
     weights=pathlib.Path(__file__).resolve().parent/"weights"
     if not weights.is_dir():
         raise SystemExit("Coloque este arquivo dentro da pasta fashn-vton-1.5.")
-    print("VESTE — provador privado no PC")
-    print("Entre com o MESMO e-mail e senha utilizados no aplicativo VESTE.")
-    email=input("E-mail VESTE: ").strip()
-    password=getpass.getpass("Senha VESTE (não aparece ao digitar): ")
-    try:
-        api=API(email,password)
-    except APIError as exc:
-        raise SystemExit("Falha no login. Confira os dados e se o e-mail foi confirmado. "+str(exc))
-    finally:
-        del password
+    print("VESTE — provador privado no PC (multicontas)")
+    print("Cada pessoa deve autorizar sua própria conta VESTE.")
+    print("As senhas não serão gravadas. Uma GPU, um pedido por vez.")
+    accounts = []
+    while True:
+        choice = input("Quantas contas deseja conectar? [1/2]: ").strip() or "2"
+        if choice in ("1", "2"):
+            break
+        print("Escolha 1 ou 2.")
+    for index in range(int(choice)):
+        while True:
+            email = input("E-mail VESTE da conta "+str(index+1)+": ").strip()
+            password = getpass.getpass("Senha VESTE (não aparece ao digitar): ")
+            try:
+                api = API(email, password)
+                if any(a.uid == api.uid for a in accounts):
+                    print("Esta conta já foi conectada. Use a outra conta.")
+                    continue
+                accounts.append(api)
+                print("Conta "+str(index+1)+" conectada.", flush=True)
+                break
+            except (APIError, URLError, TimeoutError):
+                print("Não foi possível autenticar. Confira os dados ou a conexão e tente novamente.")
+            finally:
+                del password
     print("GPU:",torch.cuda.get_device_name(0),flush=True)
     print("Carregando FASHN...",flush=True)
     pipeline=TryOnPipeline(weights_dir=str(weights),device="cuda")
-    print("VESTE CONECTADO — aguardando pedidos. Ctrl+C para encerrar.",flush=True)
-    while True:
-        try:
-            cutoff=(datetime.now(timezone.utc)-timedelta(minutes=30)).isoformat()
-            for stale in api.rows(select="id",status="eq.running",updated_at="lt."+cutoff):
-                api.patch(str(uuid.UUID(stale["id"])),"running",status="error",error_message="Pedido interrompido. Exclua e envie novamente.")
-            jobs=api.rows(select="id,user_id,categories,status",status="eq.queued",order="created_at.asc",limit="1")
-            if jobs:
-                process(api,pipeline,jobs[0])
-            else:
+    print("VESTE CONECTADO — "+str(len(accounts))+" conta(s), aguardando pedidos. Ctrl+C para encerrar.",flush=True)
+    # Each account retains its own authenticated API client and refresh token.
+    # Never use a privileged key or substitute the identity of another account.
+    while accounts:
+        candidates = []
+        unavailable = []
+        for index, api in enumerate(accounts):
+            try:
+                cutoff=(datetime.now(timezone.utc)-timedelta(minutes=30)).isoformat()
+                for stale in api.rows(select="id",status="eq.running",updated_at="lt."+cutoff):
+                    api.patch(str(uuid.UUID(stale["id"])),"running",status="error",error_message="Pedido interrompido. Exclua e envie novamente.")
+                jobs=api.rows(select="id,user_id,categories,status,created_at",status="eq.queued",order="created_at.asc",limit="1")
+                for job in jobs:
+                    if job["user_id"] != api.uid:
+                        raise ValueError("Pedido fora da conta autorizada.")
+                    candidates.append((job["created_at"],index,api,job))
+            except APIError as exc:
+                if exc.status in (401,403):
+                    print("Sessão da conta "+str(index+1)+" indisponível. A outra conta continua ativa; reinicie para reconectar.",flush=True)
+                    unavailable.append(api)
+                else:
+                    print("Falha de conexão com uma conta:",str(exc),flush=True)
+            except (URLError, TimeoutError):
+                print("Sem conexão com uma conta. Tentarei novamente.",flush=True)
+        for api in unavailable:
+            accounts.remove(api)
+        if not accounts:
+            break
+        if candidates:
+            _, _, api, job = min(candidates,key=lambda item: (item[0],item[1]))
+            try:
+                process(api,pipeline,job)
+            except APIError as exc:
+                print("Não consegui iniciar o pedido:",str(exc),flush=True)
                 time.sleep(12)
-        except APIError as exc:
-            if exc.status in (401,403):
-                raise SystemExit("Sessão expirada. Reinicie o programa e entre novamente.")
-            print("Erro de conexão:",str(exc),flush=True)
-            time.sleep(20)
-        except (URLError,TimeoutError) as exc:
-            print("Sem conexão. Nova tentativa em 20 segundos.",flush=True)
-            time.sleep(20)
+            except (URLError, TimeoutError):
+                print("Conexão interrompida.",flush=True)
+                time.sleep(12)
+        else:
+            time.sleep(12)
+    print("Nenhuma conta conectada. Reinicie o programa para entrar novamente.")
 
 if __name__=="__main__":
     try:
