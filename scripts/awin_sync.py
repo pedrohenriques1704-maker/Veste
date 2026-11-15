@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Scheduled, server-only Awin ingestion. Standard library; never logs secrets."""
-import csv, gzip, io, json, os, re, sys, unicodedata, urllib.request, urllib.parse
+import csv, gzip, io, json, os, re, sys, unicodedata, urllib.request, urllib.parse, urllib.error
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
@@ -39,31 +39,85 @@ def db(path,payload=None):
         b=r.read(); return json.loads(b) if b else None
 def log(kind,ok,n,detail):
     db("rpc/veste_commerce_sync_log",dict(sync_kind=kind,success=ok,record_count=n,summary=detail))
+class SyncIssue(Exception):
+    """Only constant diagnostic codes or numeric counters may be shown in logs."""
+    def __init__(self, code): self.code=code; super().__init__(code)
+
+def field_key(key):
+    return re.sub(r"[^a-z0-9]+","_",norm(key)).strip("_")
+
 def rows(data):
-    sample=data.decode("utf-8-sig",errors="strict")
-    dialect=csv.Sniffer().sniff(sample[:8192],delimiters=",;\t")
-    return list(csv.DictReader(io.StringIO(sample),dialect=dialect))
+    try:
+        sample=data.decode("utf-8-sig",errors="strict")
+        header=sample.splitlines()[0] if sample else ""
+        # Identify delimiter on the header alone, not a truncated sample containing
+        # quoted multiline product descriptions (Sniffer can fail on such files).
+        delimiters=[(",",len(next(csv.reader([header],delimiter=",")))),(";",len(next(csv.reader([header],delimiter=";")))),("\t",len(next(csv.reader([header],delimiter="\t"))))]
+        delim,width=max(delimiters,key=lambda x:x[1])
+        if width<2: raise SyncIssue("csv_header_not_recognized")
+        reader=csv.DictReader(io.StringIO(sample,newline=""),delimiter=delim,strict=True)
+        keys=[field_key(x) for x in reader.fieldnames or []]
+        if not all(keys) or len(set(keys))!=len(keys): raise SyncIssue("csv_duplicate_or_empty_columns")
+        result=[]
+        for row in reader:
+            if None in row or any(v is None for v in row.values()): raise SyncIssue("csv_incomplete_row")
+            result.append({field_key(k):v for k,v in row.items()})
+        return result
+    except (UnicodeDecodeError,csv.Error): raise SyncIssue("csv_invalid_encoding_or_quoting") from None
+
+def request_stage(url,code):
+    try: return get(url)
+    except urllib.error.HTTPError as e: raise SyncIssue(code+"_http_"+str(e.code)) from None
+    except SyncIssue: raise
+    except Exception: raise SyncIssue(code+"_download_failed") from None
+
+def pick_field(row,*keys):
+    return next((row[k] for k in keys if row.get(k) not in ("",None)), "")
+
+def select_feeds(data,allowed):
+    parsed=rows(data)
+    if not parsed: raise SyncIssue("feed_list_empty")
+    if not any(k in parsed[0] for k in ("advertiser_id","merchant_id","merchantid")): raise SyncIssue("feed_list_missing_advertiser_column")
+    candidates={}
+    for r in parsed:
+        merchant=text(pick_field(r,"advertiser_id","merchant_id","merchantid"),20)
+        if not merchant.isdigit() or int(merchant) not in allowed: continue
+        status=norm(pick_field(r,"membership_status","relationship","membership"))
+        if status not in ("active","joined","approved","yes"): continue
+        fmt=norm(pick_field(r,"datafeed_format","data_feed_format","feed_format","format"))
+        if fmt not in ("awin","legacy","standard",""): continue
+        language=norm(pick_field(r,"language","feed_language"))
+        region=norm(pick_field(r,"primary_region","region"))
+        candidates.setdefault(int(merchant),[]).append((r,language,region))
+    chosen={}
+    for mid,options in candidates.items():
+        preferred=[x for x in options if x[1] in ("portuguese","portugues","portuguese (brazil)","pt","pt_br","pt-br") and x[2] in ("","br","brazil","brasil")]
+        pool=preferred or options
+        if len(pool)!=1: raise SyncIssue("multiple_legacy_feeds_for_"+str(mid))
+        chosen[mid]=pool[0][0]
+    return chosen
+
 GROUPS=[("onepiece",r"\b(vestido|macacao|macaquinho|dress)\b"),("shoes",r"\b(tenis|sapato|bota|coturno|mocassim|sandalia|chinelo|sapatilha|chuteira|sneaker)\b"),("accessory",r"\b(bolsa|mochila|cinto|bone|oculos|colar|brinco|relogio|meia|viseira)\b"),("layer",r"\b(jaqueta|blazer|casaco|colete|cardigan|parka|sobretudo)\b"),("bottom",r"\b(calca|shorts?|bermuda|saia|legging|jogger)\b"),("top",r"\b(camisa|camiseta|regata|blusa|polo|moletom|cropped|sueter|top)\b")]
 COLORS={"azul marinho":"marinho","azul-marinho":"marinho","marinho":"marinho","off white":"offwhite","off-white":"offwhite","offwhite":"offwhite","verde oliva":"oliva","oliva":"oliva","preto":"preto","preta":"preto","branco":"branco","branca":"branco","cinza":"cinza","bege":"bege","caramelo":"caramelo","marrom":"marrom","azul":"azul","verde":"verde","vermelho":"vermelho","vermelha":"vermelho","rosa":"rosa","vinho":"vinho","amarelo":"amarelo","amarela":"amarelo","roxo":"roxo","roxa":"roxo","laranja":"laranja","jeans":"jeans"}
 def normalize(r,merchant,shop,stamp):
-    def pick(*keys): return next((r[k] for k in keys if r.get(k)), "")
+    def pick(*keys): return pick_field(r,*keys)
     name=text(pick("product_name","title","name"))
     category=text(pick("merchant_category","product_type","category_name"),300)
     group=next((k for k,rx in GROUPS if re.search(rx,norm(name))),None) or next((k for k,rx in GROUPS if re.search(rx,norm(category))),None)
     variant=text(pick("merchant_product_id","id"),180)
     base=text(pick("item_group_id","parent_product_id","product_group_id") or variant,180)
-    merchant_url=https(pick("merchant_deep_link"))
+    merchant_url=https(pick("merchant_deep_link","merchant_url","product_url"))
     if merchant==118977:
         slug=re.fullmatch(r"/([a-z0-9-]+)/p/?",urllib.parse.urlsplit(merchant_url).path)
-        if slug: base=slug.group(1)
+        if slug and urllib.parse.urlsplit(merchant_url).hostname in {"www.lauriesporte.com.br","lauriesporte.com.br"}: base=slug.group(1)
         else: return None  # Preserve the original Lauri stable product-ID scheme.
-    link=https(pick("aw_deep_link","affiliate_url","link"))
+    link=https(pick("aw_deep_link","awin_deep_link","affiliate_url","link"))
     # Only accept Awin tracking URLs, not merchant links masquerading as affiliate URLs.
     if not link or urllib.parse.urlsplit(link).hostname not in {"www.awin1.com","awin1.com","www.zenaps.com","zenaps.com"}: return None
     if not name or not group or not base: return None
-    raw=text(pick("colour","color"),100); c=norm(raw or name)
+    raw=text(pick("colour","color","product_colour"),100); c=norm(raw or name)
     color=next((v for k,v in COLORS.items() if re.search(r"\b"+re.escape(k)+r"\b",c)),"")
-    gender=norm(pick("gender","audience") or name)
+    gender=norm(pick("gender","audience","product_gender") or name)
     audience="feminino" if re.search(r"\b(feminino|feminina|female|women)\b",gender) else "masculino" if re.search(r"\b(masculino|masculina|male|men)\b",gender) else "unissex" if "unisex" in gender or "unissex" in gender else ""
     cur=text(pick("currency","currency_code") or "BRL",10).upper()
     raw_price=pick("search_price","store_price","price")
@@ -71,10 +125,10 @@ def normalize(r,merchant,shop,stamp):
     price=amount(raw_price) if cur in ("BRL","R$") else None
     stock=norm(pick("in_stock","availability","stock_status")); sale=norm(pick("is_for_sale"))
     # Unknown stock is not promoted as available.
-    available=stock in ("1","true","yes","in stock","in_stock","available","disponivel","instock")
-    on_sale=sale not in ("0","false","no")
-    size=text(pick("size","size_name"),40)
-    return dict(id=f"awin:{merchant}:{base}",source="awin",merchant_id=merchant,merchant_product_id=base,awin_product_id=text(pick("aw_product_id"),100),name=name,description=text(pick("description"),1000),affiliate_url=link,merchant_url=merchant_url,image_url=https(pick("aw_image_url","merchant_image_url","image_link")),price=price,rrp_price=amount(pick("rrp_price","rrp")) if cur in ("BRL","R$") else None,currency="BRL" if cur in ("BRL","R$") else cur,group_key=group,merchant_category=category,category_name=text(pick("category_name"),180),brand=text(pick("brand_name","brand"),80),shop=shop,color=color,raw_colour=raw,audience=audience,sizes=[size] if size else [],in_stock=available,is_for_sale=on_sale,variant_count=1,source_updated_at=stamp,synced_at=datetime.now(timezone.utc).isoformat())
+    available=stock in ("1","true","yes","y","sim","in stock","in_stock","available","disponivel","instock")
+    on_sale=sale not in ("0","false","no","n","nao")
+    size=text(pick("size","size_name","product_size"),40)
+    return dict(id=f"awin:{merchant}:{base}",source="awin",merchant_id=merchant,merchant_product_id=base,awin_product_id=text(pick("aw_product_id"),100),name=name,description=text(pick("description","product_short_description"),1000),affiliate_url=link,merchant_url=merchant_url,image_url=https(pick("aw_image_url","merchant_image_url","image_link")),price=price,rrp_price=amount(pick("rrp_price","rrp")) if cur in ("BRL","R$") else None,currency="BRL" if cur in ("BRL","R$") else cur,group_key=group,merchant_category=category,category_name=text(pick("category_name"),180),brand=text(pick("brand_name","brand"),80),shop=shop,color=color,raw_colour=raw,audience=audience,sizes=[size] if size else [],in_stock=available,is_for_sale=on_sale,variant_count=1,source_updated_at=stamp,synced_at=datetime.now(timezone.utc).isoformat())
 def combine(items):
     out={}
     for x in items:
@@ -90,32 +144,53 @@ def combine(items):
         else: out[x["id"]]=x
     return list(out.values())
 def sync_catalog():
-    publisher=os.environ["AWIN_PUBLISHER_ID"]
-    key=os.environ["AWIN_FEED_KEY"]
+    publisher=os.environ["AWIN_PUBLISHER_ID"].strip()
+    key=os.environ["AWIN_FEED_KEY"].strip()
     allowed={int(x) for x in os.environ.get("AWIN_MERCHANT_IDS","118977").split(",") if x.strip()}
-    if not publisher.isdigit() or not key or not allowed: raise ValueError("Missing catalog config")
-    url=f"https://ui.awin.com/productdata-darwin-download/publisher/{publisher}/{urllib.parse.quote(key,safe='')}/1/feedList"
-    feeds=rows(get(url)); total=0; processed=set()
-    for raw in feeds:
-        r={norm(k):v for k,v in raw.items() if k}
-        merchant=text(r.get("advertiser id"),20)
-        if not merchant.isdigit() or int(merchant) not in allowed: continue
-        if norm(r.get("membership status"))!="active" or norm(r.get("datafeed format"))!="awin": continue
-        mid=int(merchant)
-        if mid in processed: raise ValueError("Multiple feeds for merchant: configure one feed")
-        feed=https(r.get("url"),{"productdata.awin.com","ui.awin.com"})
-        if not feed: raise ValueError("Invalid feed URL")
-        stamp=text(r.get("last imported"),40)
-        try: stamp=datetime.fromisoformat(stamp).replace(tzinfo=timezone.utc).isoformat()
-        except ValueError: stamp=datetime.now(timezone.utc).isoformat()
-        parsed=rows(get(feed))
-        products=combine(normalize(x,mid,text(r.get("advertiser name"),80),stamp) for x in parsed)
-        if not parsed or not products or not any(p["in_stock"] and p["is_for_sale"] for p in products): raise ValueError("Empty or unrecognized catalog; preserving existing rows")
-        # Atomic per-merchant snapshot, with deletion guard server-side. No hard deletes.
-        db("rpc/veste_catalog_snapshot_import",{"merchant":mid,"records":products,"expected_rows":len(parsed)})
-        total+=len(products);processed.add(mid)
-    if processed!=allowed: raise ValueError("One or more configured advertisers lack a supported active feed")
-    log("catalog",True,total,"Approved Awin feeds imported; explicit stock flags applied")
+    if not publisher.isdigit() or not key or not allowed: raise SyncIssue("catalog_config_missing")
+    encoded=urllib.parse.quote(key,safe="")
+    urls=[
+        ("feed_list",f"https://ui.awin.com/productdata-darwin-download/publisher/{publisher}/{encoded}/1/feedList"),
+        # Awin documents this endpoint as the fallback for legacy-only lists.
+        ("legacy_list",f"https://productdata.awin.com/datafeed/list/apikey/{encoded}")
+    ]
+    selected={}; last_code="feed_list_no_approved_legacy"
+    for stage,url in urls:
+        try:
+            selected=select_feeds(request_stage(url,stage),allowed)
+            if set(selected)==allowed: break
+            last_code=stage+"_no_approved_legacy"
+        except SyncIssue as e: last_code=stage+"_"+e.code
+    if set(selected)!=allowed: raise SyncIssue(last_code)
+    total=0
+    for mid,r in selected.items():
+        feed=https(pick_field(r,"url","download_url","feed_url"),{"productdata.awin.com","ui.awin.com"})
+        if not feed: raise SyncIssue("feed_invalid_download_url")
+        stamp=text(pick_field(r,"last_imported","last_updated","last_update"),40)
+        try:
+            parsed_stamp=datetime.fromisoformat(stamp.replace("Z","+00:00"))
+            if parsed_stamp.tzinfo is None: parsed_stamp=parsed_stamp.replace(tzinfo=timezone.utc)
+            stamp=parsed_stamp.isoformat()
+        except ValueError: raise SyncIssue("feed_invalid_source_timestamp") from None
+        parsed=rows(request_stage(feed,"product_feed"))
+        if not parsed: raise SyncIssue("product_feed_empty")
+        products=combine(normalize(x,mid,text(pick_field(r,"advertiser_name","merchant_name"),80),stamp) for x in parsed)
+        available=sum(p["in_stock"] and p["is_for_sale"] for p in products)
+        variants=sum(p["variant_count"] for p in products)
+        print(f"catalog merchant={mid} rows={len(parsed)} accepted_variants={variants} products={len(products)} available={available}",flush=True)
+        if not products: raise SyncIssue("product_feed_no_supported_rows")
+        if not available: raise SyncIssue("product_feed_no_available_rows")
+        if variants < len(parsed)*.7: raise SyncIssue("product_feed_coverage_below_70_percent")
+        # Keep the existing atomic database coverage, identity and staleness guards.
+        try: db("rpc/veste_catalog_snapshot_import",{"merchant":mid,"records":products,"expected_rows":len(parsed)})
+        except urllib.error.HTTPError as e:
+            # Only known database exception phrases are permitted; never log response bodies.
+            try: reason=json.loads(e.read().decode()).get("message","")
+            except Exception: reason=""
+            codes={"Catalog identity/coverage mismatch":"db_identity_coverage_mismatch","Feed older than existing catalog":"db_feed_older","Incomplete or unsupported feed":"db_incomplete_feed","Invalid catalog batch":"db_invalid_batch","Invalid catalog row":"db_invalid_row"}
+            raise SyncIssue(codes.get(reason,"db_import_http_"+str(e.code))) from None
+        total+=len(products)
+    log("catalog",True,total,"Approved Awin legacy feeds imported; stock validated")
 def sync_transactions():
     pub=os.environ["AWIN_PUBLISHER_ID"]; token=os.environ["AWIN_API_TOKEN"]
     if not pub.isdigit() or not token: raise ValueError("Missing transaction config")
@@ -145,7 +220,7 @@ def main():
     for kind,fn in [("catalog",sync_catalog),("transactions",sync_transactions)]:
         try: fn(); print(kind+": OK")
         except Exception as exc:
-            failed=True; detail=type(exc).__name__+": sync not completed"
+            failed=True; detail=exc.code if isinstance(exc,SyncIssue) else type(exc).__name__+": sync not completed"
             print(kind+": "+detail,file=sys.stderr)
             try: log(kind,False,0,detail)
             except Exception: pass
