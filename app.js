@@ -44,7 +44,7 @@
   function dbPut(piece){cloud.touch();return new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite');t.objectStore('pieces').put(piece);t.oncomplete=()=>{cloud.touch();resolve()};t.onerror=()=>reject(t.error)})}
   function dbDelete(id){cloud.touch();return new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite');t.objectStore('pieces').delete(id);t.oncomplete=()=>{cloud.touch();resolve()};t.onerror=()=>reject(t.error)})}
   function dbReplace(pieces){cloud.touch();return new Promise((resolve,reject)=>{const t=state.db.transaction('pieces','readwrite');const store=t.objectStore('pieces');store.clear();pieces.forEach(p=>store.put(p));t.oncomplete=()=>{cloud.touch();resolve()};t.onerror=()=>reject(t.error)})}
-  async function refreshPieces(){state.pieces=(await dbGetAll()).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));renderAll();cloud.touch()}
+  async function refreshPieces(){state.pieces=(await dbGetAll()).filter(p=>!p.deletedAt).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));renderAll();await renderTrash();cloud.touch()}
   function navigate(route){ if(!['home','closet','looks','week','style'].includes(route))return;state.view=route;document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active',el.id===`view-${route}`));document.querySelectorAll('[data-route]').forEach(el=>el.classList.toggle('active',el.dataset.route===route));$('topbarTitle').textContent={home:'HOJE',closet:'SEU CLOSET',looks:'SEUS LOOKS',week:'PLANEJAR',style:'SEU PERFIL'}[route];if(route==='looks'&&!state.resultsGenerated)generateLooks();if(route==='style'){renderStyle();renderAdvanced()}if(route==='week')renderWeek();window.scrollTo({top:0,behavior:'smooth'})}
   function pieceById(id){return state.pieces.find(p=>p.id===id)}
   function selectedValues(container){return Array.from(container.querySelectorAll('input:checked')).map(x=>x.value)}
@@ -75,7 +75,7 @@
     if(original&&isDemoPiece(original)&&state.photoData!==original.image){piece.demo=false;piece.source='Foto cadastrada no dispositivo'}
     const button=$('savePiece');button.disabled=true;button.textContent='Salvando...';try{await dbPut(piece);closePieceDialog();await refreshPieces();state.resultsGenerated=false;state.settings.weekPlan=null;saveLocal();notify(original?'Peça atualizada!':'Peça adicionada ao closet!')}catch(err){notify('Erro ao salvar. Verifique o espaço disponível no dispositivo.')}finally{button.disabled=false;button.textContent='Salvar peça'}
   }
-  async function removePiece(id){const p=pieceById(id);if(!p||!confirm(`Excluir "${p.name}" do closet?`))return;try{await dbDelete(id);state.settings.favorites=state.settings.favorites.filter(f=>!f.ids.includes(id));state.settings.loved=state.settings.loved.filter(k=>!k.split('|').includes(id));state.settings.rejected=state.settings.rejected.filter(k=>!k.split('|').includes(id));state.settings.weekPlan=null;saveLocal();state.resultsGenerated=false;await refreshPieces();notify('Peça excluída.')}catch{notify('Erro ao excluir peça.')}}
+  async function removePiece(id){const p=pieceById(id);if(!p||!confirm(`Excluir "${p.name}" do closet?`))return;try{await dbPut({...p,deletedAt:new Date().toISOString()});state.settings.favorites=state.settings.favorites.filter(f=>!f.ids.includes(id));state.settings.loved=state.settings.loved.filter(k=>!k.split('|').includes(id));state.settings.rejected=state.settings.rejected.filter(k=>!k.split('|').includes(id));state.settings.weekPlan=null;saveLocal();state.resultsGenerated=false;await refreshPieces();notify('Peça movida para a lixeira por 30 dias.')}catch{notify('Erro ao excluir peça.')}}
   function renderHome(){const available=state.pieces.filter(p=>p.available!==false);$('statPieces').textContent=state.pieces.length;$('statFavorites').textContent=state.settings.favorites.length;$('statWorn').textContent=state.settings.wearHistory.length;
     renderWeather();
     const favorites=state.settings.favorites.slice(-3).reverse();$('recentFavorites').innerHTML=favorites.length?`<div class="section-heading"><div><div class="eyebrow subtle">COMBINAÇÕES SALVAS</div><h2>Seus favoritos recentes</h2></div></div><div class="steps-grid">${favorites.map(f=>`<button class="step-card" data-route="style"><div class="step-icon">♡ <span>↗</span></div><h3>${escapeHTML(f.ids.map(id=>pieceById(id)?.name).filter(Boolean).slice(0,2).join(' + '))}</h3><p>${escapeHTML(OCCASIONS[f.occasion]||'Look favorito')}</p></button>`).join('')}</div>`:'';
@@ -162,9 +162,10 @@
   function renderAll(){renderHome();renderCloset();renderLooks();renderWeek();if(state.view==='style'){renderStyle();renderAdvanced()}}
   function savePreferences(){state.settings.prefs=Array.from($('styleOptions').querySelectorAll('input:checked')).map(i=>i.value);saveLocal();state.resultsGenerated=false;notify('Seu estilo foi salvo. As próximas sugestões considerarão suas escolhas.')}
   function resetFeedback(){if(!confirm('Limpar todas as curtidas e rejeições? Os favoritos serão mantidos.'))return;state.settings.loved=[];state.settings.rejected=[];saveLocal();state.resultsGenerated=false;renderStyle();notify('Feedback limpo.')} 
-  function exportBackup(){const data={app:'veste',version:1,exportedAt:new Date().toISOString(),pieces:state.pieces,settings:state.settings};const blob=new Blob([JSON.stringify(data)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`veste-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);notify('Backup exportado. Guarde o arquivo em local seguro.')}
-  async function importBackup(e){const f=e.target.files?.[0];e.target.value='';if(!f)return;try{const raw=await f.text();if(raw.length>90*1024*1024)throw new Error('Arquivo de backup grande demais.');const d=JSON.parse(raw);if(d.app!=='veste'||!Array.isArray(d.pieces)||!d.settings||d.pieces.some(p=>!p.id||!p.name||!GROUPS[p.group]||typeof p.image!=='string'||!/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(p.image)))throw new Error('O arquivo não é um backup válido do VESTE.');if(!confirm(`Restaurar ${d.pieces.length} peças? Isso substituirá o closet e as preferências atuais neste dispositivo.`))return;
-    await dbReplace(d.pieces);state.settings={...d.settings,prefs:Array.isArray(d.settings.prefs)?d.settings.prefs:[],loved:Array.isArray(d.settings.loved)?d.settings.loved:[],rejected:Array.isArray(d.settings.rejected)?d.settings.rejected:[],favorites:Array.isArray(d.settings.favorites)?d.settings.favorites:[],wearHistory:Array.isArray(d.settings.wearHistory)?d.settings.wearHistory:[]};delete state.settings.aiKey;delete state.settings.apiKey;if(!state.settings.v3||typeof state.settings.v3!=='object'||Array.isArray(state.settings.v3))state.settings.v3={};saveLocal();state.resultsGenerated=false;await refreshPieces();renderStyle();renderAdvanced();notify('Backup restaurado com sucesso!')
+  async function exportBackup(){downloadBackup(await dbGetAll(),cloud.defaults(state.settings))}
+  function downloadBackup(pieces,settings){const data={app:'veste',version:1,exportedAt:new Date().toISOString(),pieces,settings};const blob=new Blob([JSON.stringify(data)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`veste-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);notify('Backup exportado. Guarde o arquivo em local seguro.')}
+  async function importBackup(e){const f=e.target.files?.[0];e.target.value='';if(!f)return;try{const raw=await f.text();if(raw.length>90*1024*1024)throw new Error('Arquivo de backup grande demais.');const d=JSON.parse(raw);if(d.app!=='veste'||!Array.isArray(d.pieces)||d.pieces.length>2000||!d.settings||typeof d.settings!=='object'||Array.isArray(d.settings)||new Set(d.pieces.map(p=>p?.id)).size!==d.pieces.length||d.pieces.some(p=>!p||typeof p.id!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(p.id)||typeof p.name!=='string'||!Object.hasOwn(GROUPS,p.group)||typeof p.image!=='string'||!/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(p.image)))throw new Error('O arquivo não é um backup válido do VESTE.');if(!confirm(`Restaurar ${d.pieces.length} peças? Isso substituirá o closet e as preferências atuais e a alteração poderá ser sincronizada com a sua conta. Exporte o estado atual antes de continuar.`))return;
+    await dbReplace(d.pieces);state.settings={...cloud.defaults(d.settings),prefs:Array.isArray(d.settings.prefs)?d.settings.prefs:[],loved:Array.isArray(d.settings.loved)?d.settings.loved:[],rejected:Array.isArray(d.settings.rejected)?d.settings.rejected:[],favorites:Array.isArray(d.settings.favorites)?d.settings.favorites:[],wearHistory:Array.isArray(d.settings.wearHistory)?d.settings.wearHistory:[]};delete state.settings.aiKey;delete state.settings.apiKey;if(!state.settings.v3||typeof state.settings.v3!=='object'||Array.isArray(state.settings.v3))state.settings.v3={};saveLocal();state.resultsGenerated=false;await refreshPieces();renderStyle();renderAdvanced();notify('Backup restaurado com sucesso!')
   }catch(err){notify(err.message||'Falha ao restaurar backup.')}}
   // VESTE 2 — Extras usam os mesmos dados locais da versão anterior.
   function localISO(d){return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
@@ -745,7 +746,7 @@
   async function photoPath(data,uid){const blob=blobOf(data),hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))).map(n=>n.toString(16).padStart(2,'0')).join('');return {path:uid+'/'+hash+'.'+({ 'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif'}[blob.type]),blob}}
   function validPath(path,uid){return typeof path==='string'&&path.startsWith(uid+'/')&&/^[0-9a-f]{64}\.(jpg|png|webp|gif)$/.test(path.slice(uid.length+1))}
   function asData(blob){return new Promise((resolve,reject)=>{const f=new FileReader();f.onload=()=>resolve(f.result);f.onerror=()=>reject(new Error('Não consegui ler uma foto da nuvem.'));f.readAsDataURL(blob)})}
-  const fields=['id','name','group','color','pattern','fit','formality','occasions','seasons','styles','available','createdAt','useCount','lastWorn','subtype','fabric','lengthType','neckline','coverage','price','source','demo'];
+  const fields=['id','name','group','color','pattern','fit','formality','occasions','seasons','styles','available','createdAt','useCount','lastWorn','subtype','fabric','lengthType','neckline','coverage','price','source','demo','deletedAt'];
   function manifest(p){const out={};for(const k of fields)if(Object.hasOwn(p,k))out[k]=p[k];return out}
   function validPiece(p){return p&&typeof p.id==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(p.id)&&typeof p.name==='string'&&Object.hasOwn(GROUPS,p.group)}
   function baseRevision(row){return row?Number(row.revision):null}
@@ -781,6 +782,21 @@
       remote.push({...manifest(p),image});
     }return remote;
   }
+  async function listVersions(){
+    const uid=kid(),c=await sessionClient();
+    const {data,error}=await c.from('veste_closet_versions').select('revision,saved_at').eq('user_id',uid).order('saved_at',{ascending:false}).limit(50);
+    if(error)throw error;
+    if(uid!==kid())throw Error('Sessão alterada.');
+    return data||[];
+  }
+  async function exportVersion(revision){
+    const uid=kid(),c=await sessionClient();
+    const {data,error}=await c.from('veste_closet_versions').select('pieces,settings').eq('user_id',uid).eq('revision',revision).single();
+    if(error)throw error;
+    const pcs=await pullPieces(c,uid,data);
+    if(uid!==kid()||!cloud.canEnter())throw Error('Sessão alterada.');
+    downloadBackup(pcs.filter(p=>!p.deletedAt||trashAvailable(p)),defaults(data.settings));
+  }
   async function sync(manual=false,force=null){
     if(!ready||!user||busy||recovery||!navigator.onLine||!idle()){if(manual)msg('Conecte-se à internet e feche a edição de peças para sincronizar.');return}
     if(meta.conflict&&!force){render();return}
@@ -793,6 +809,7 @@
       if(action==='conflict'){
         meta.conflict=true;persist();msg('Há mudanças diferentes na nuvem e neste dispositivo. Escolha qual versão manter; nenhuma foi sobrescrita.');return;
       }
+      if(action==='noop'&&row?.pieces?.some(p=>trashExpired(p)))action='push';
       if(action==='noop'){msg(row?'Tudo sincronizado.':'Conta conectada. Adicione peças ou importe o closet local.');return}
       if(action==='pull'){
         const pcs=await pullPieces(c,uid,row);
@@ -803,7 +820,7 @@
         }finally{applying=false;if(shell)shell.inert=false;if(nav)nav.inert=false}
         msg('Versão da nuvem carregada: '+pcs.length+' peças.');return;
       }
-      const pcs=await dbGetAll(),settings=defaults(state.settings);
+      const pcs=(await dbGetAll()).filter(p=>!trashExpired(p)),settings=defaults(state.settings);
       if(pcs.length>2000)throw new Error('Limite de 2.000 peças por closet.');
       const items=await uploadManifest(c,uid,pcs,row);
       if(!ready||kid()!==uid)throw new Error('Sessão alterada durante a sincronização.');
@@ -811,6 +828,7 @@
       const response=rev===null?await c.from(table).insert({...payload,user_id:uid}).select('revision').single():await c.from(table).update(payload).eq('user_id',uid).eq('revision',rev).select('revision').maybeSingle();
       if((response.error&&response.error.code==='23505')||(!response.error&&!response.data)){meta.conflict=true;persist();msg('Outro dispositivo sincronizou primeiro. Nenhuma versão foi sobrescrita.');return}
       if(response.error)throw response.error;
+      if(epoch===start&&kid()===uid&&state.db){const expired=(await dbGetAll()).filter(p=>trashExpired(p));if(expired.length&&epoch===start&&kid()===uid){applying=true;try{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');await new Promise((resolve,reject)=>{t.oncomplete=resolve;t.onabort=()=>reject(t.error);t.onerror=()=>reject(t.error);for(const p of expired){const req=store.get(p.id);req.onsuccess=()=>{if(req.result&&trashExpired(req.result))store.delete(p.id)}}});await refreshPieces()}finally{applying=false}}}
       meta={revision:Number(response.data.revision),dirty:epoch!==start,conflict:false};persist();msg('Sincronizado: '+items.length+' peças, preferências e histórico.');
     }catch(e){msg('Sincronização pendente: '+String(e?.message||e).slice(0,250)+'. Seus dados locais foram mantidos.')}
     finally{busy=false;render();if(meta.dirty&&!meta.conflict&&epoch!==start)schedule(1600)}
@@ -843,7 +861,7 @@
     $('cloudHeading').textContent=user?(recovery?'Escolha uma nova senha.':'Seu closet, onde estiver.'):{login:'Bem-vindo ao VESTE.',signup:'Crie sua conta.',reset:'Recupere sua senha.',sent:'Confira seu e-mail.'}[authScreen];
     $('cloudSentText').textContent=sentMode==='reset'?'Se houver uma conta vinculada ao endereço informado, você receberá instruções para redefinir sua senha.':'Se o cadastro puder ser concluído, você receberá um link de confirmação. Confira também o spam.';
     $('cloudSentEmail').textContent=sentEmail;
-    for(const id of ['cloudLogin','cloudCreateAccount','cloudSendReset','cloudGoSignup','cloudGoReset','cloudBackSignup','cloudBackReset','cloudBackSent','cloudChangePassword'])$(id).disabled=busy;
+    for(const id of ['cloudLogin','cloudGoogle','cloudCreateAccount','cloudSendReset','cloudGoSignup','cloudGoReset','cloudBackSignup','cloudBackReset','cloudBackSent','cloudChangePassword'])$(id).disabled=busy;
   }
   function goAuth(next,options={}){
     if(user||busy&&!options.force||!['login','signup','reset','sent'].includes(next))return;
@@ -902,11 +920,12 @@
   function mount(){
     if(setupDone)return;
     const panel=document.createElement('section');panel.id='cloudPanel';panel.className='panel cloud-panel';authScreen=screenFrom(location.search);
-    panel.innerHTML='<div class="cloud-head"><div><div class="eyebrow">VESTE 7.0 · MINHA CONTA</div><h2 id="cloudHeading">Bem-vindo ao VESTE.</h2></div><span id="cloudState" class="cloud-state">Modo local</span></div><div id="cloudGuest"><form class="auth-form" id="cloudLoginForm"><p>Entre para acessar seu guarda-roupa inteligente.</p><label for="cloudEmail">E-mail<input id="cloudEmail" type="email" autocomplete="username" required placeholder="seu@email.com"></label><label for="cloudPassword">Senha<input id="cloudPassword" type="password" autocomplete="current-password" required placeholder="Sua senha"></label><button type="button" class="text-button auth-forgot" id="cloudGoReset">Esqueci minha senha</button><button class="btn btn-dark" type="submit" id="cloudLogin">Entrar</button><div class="auth-new-account"><span>Ainda não tem conta?</span><button type="button" class="btn btn-outline" id="cloudGoSignup">Criar conta</button></div></form><form class="auth-form" id="cloudSignupForm" hidden><button class="text-button auth-back" type="button" id="cloudBackSignup">← Voltar ao login</button><p>Seu closet digital começa aqui.</p><label for="cloudSignupEmail">E-mail<input id="cloudSignupEmail" type="email" autocomplete="email" required placeholder="seu@email.com"></label><label for="cloudSignupPassword">Crie uma senha<input id="cloudSignupPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="No mínimo 8 caracteres"></label><label for="cloudSignupConfirm">Confirme sua senha<input id="cloudSignupConfirm" type="password" autocomplete="new-password" minlength="8" required placeholder="Repita a senha"></label><button class="btn btn-dark" type="submit" id="cloudCreateAccount">Criar minha conta</button><p class="auth-form-note">Você precisará confirmar seu endereço de e-mail para ativar a conta.</p></form><form class="auth-form" id="cloudResetForm" hidden><button class="text-button auth-back" type="button" id="cloudBackReset">← Voltar ao login</button><p>Informe o e-mail utilizado no cadastro para receber as instruções.</p><label for="cloudResetEmail">E-mail<input id="cloudResetEmail" type="email" autocomplete="email" required placeholder="seu@email.com"></label><button class="btn btn-dark" type="submit" id="cloudSendReset">Enviar link de recuperação</button></form><section class="auth-form auth-sent" id="cloudSent" hidden><div class="auth-mail-mark" aria-hidden="true">✉</div><p id="cloudSentText"></p><strong id="cloudSentEmail"></strong><button class="btn btn-dark" type="button" id="cloudBackSent">Voltar ao login</button></section></div><div id="cloudSigned" hidden><p id="cloudIdentity"></p><div class="v3actions"><button class="btn btn-dark" id="cloudSync">↻ Sincronizar agora</button><button class="btn btn-outline" id="cloudMigrate">Migrar closet antigo</button><button class="text-button" id="cloudLogout">Sair</button></div><div id="cloudConflict" class="cloud-conflict" hidden><strong>Qual versão deve ser mantida?</strong><p>Escolher uma versão pode descartar alterações feitas no outro dispositivo. Confira com atenção antes de continuar.</p><div class="v3actions"><button class="btn btn-outline" id="cloudKeepRemote">Usar versão da nuvem</button><button class="btn btn-outline" id="cloudKeepLocal">Enviar versão deste aparelho</button></div></div><p class="v3muted">Fotos privadas e dados separados por conta. Sair bloqueia o acesso ao aplicativo; os dados locais permanecem separados para o próximo login.</p></div><form class="auth-form" id="cloudRecovery" hidden><p>Defina sua nova senha para voltar ao closet.</p><label for="cloudNewPassword">Nova senha<input type="password" id="cloudNewPassword" autocomplete="new-password" minlength="8" required></label><label for="cloudNewPasswordConfirm">Confirme a nova senha<input type="password" id="cloudNewPasswordConfirm" autocomplete="new-password" minlength="8" required></label><button type="submit" class="btn btn-dark" id="cloudChangePassword">Atualizar senha</button></form><div id="cloudBoot" hidden><p id="cloudBootText">Preparando seu guarda-roupa…</p><div class="v3actions"><button class="btn btn-outline" id="cloudRetry">Atualizar página</button><button class="text-button" id="cloudExitBlocked">Sair da conta</button></div></div><p id="cloudMessage" class="cloud-message" aria-live="polite"></p>';
+    panel.innerHTML='<div class="cloud-head"><div><div class="eyebrow">VESTE 7.0 · MINHA CONTA</div><h2 id="cloudHeading">Bem-vindo ao VESTE.</h2></div><span id="cloudState" class="cloud-state">Modo local</span></div><div id="cloudGuest"><form class="auth-form" id="cloudLoginForm"><p>Entre para acessar seu guarda-roupa inteligente.</p><label for="cloudEmail">E-mail<input id="cloudEmail" type="email" autocomplete="username" required placeholder="seu@email.com"></label><label for="cloudPassword">Senha<input id="cloudPassword" type="password" autocomplete="current-password" required placeholder="Sua senha"></label><button type="button" class="text-button auth-forgot" id="cloudGoReset">Esqueci minha senha</button><button class="btn btn-dark" type="submit" id="cloudLogin">Entrar</button><button class="btn btn-outline" type="button" id="cloudGoogle">Continuar com Google</button><div class="auth-new-account"><span>Ainda não tem conta?</span><button type="button" class="btn btn-outline" id="cloudGoSignup">Criar conta</button></div></form><form class="auth-form" id="cloudSignupForm" hidden><button class="text-button auth-back" type="button" id="cloudBackSignup">← Voltar ao login</button><p>Seu closet digital começa aqui.</p><label for="cloudSignupEmail">E-mail<input id="cloudSignupEmail" type="email" autocomplete="email" required placeholder="seu@email.com"></label><label for="cloudSignupPassword">Crie uma senha<input id="cloudSignupPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="No mínimo 8 caracteres"></label><label for="cloudSignupConfirm">Confirme sua senha<input id="cloudSignupConfirm" type="password" autocomplete="new-password" minlength="8" required placeholder="Repita a senha"></label><button class="btn btn-dark" type="submit" id="cloudCreateAccount">Criar minha conta</button><p class="auth-form-note">Você precisará confirmar seu endereço de e-mail para ativar a conta.</p></form><form class="auth-form" id="cloudResetForm" hidden><button class="text-button auth-back" type="button" id="cloudBackReset">← Voltar ao login</button><p>Informe o e-mail utilizado no cadastro para receber as instruções.</p><label for="cloudResetEmail">E-mail<input id="cloudResetEmail" type="email" autocomplete="email" required placeholder="seu@email.com"></label><button class="btn btn-dark" type="submit" id="cloudSendReset">Enviar link de recuperação</button></form><section class="auth-form auth-sent" id="cloudSent" hidden><div class="auth-mail-mark" aria-hidden="true">✉</div><p id="cloudSentText"></p><strong id="cloudSentEmail"></strong><button class="btn btn-dark" type="button" id="cloudBackSent">Voltar ao login</button></section></div><div id="cloudSigned" hidden><p id="cloudIdentity"></p><div class="v3actions"><button class="btn btn-dark" id="cloudSync">↻ Sincronizar agora</button><button class="btn btn-outline" id="cloudMigrate">Migrar closet antigo</button><button class="text-button" id="cloudLogout">Sair</button></div><div id="cloudConflict" class="cloud-conflict" hidden><strong>Qual versão deve ser mantida?</strong><p>Escolher uma versão pode descartar alterações feitas no outro dispositivo. Confira com atenção antes de continuar.</p><div class="v3actions"><button class="btn btn-outline" id="cloudKeepRemote">Usar versão da nuvem</button><button class="btn btn-outline" id="cloudKeepLocal">Enviar versão deste aparelho</button></div></div><p class="v3muted">Fotos privadas e dados separados por conta. Sair bloqueia o acesso ao aplicativo; os dados locais permanecem separados para o próximo login.</p></div><form class="auth-form" id="cloudRecovery" hidden><p>Defina sua nova senha para voltar ao closet.</p><label for="cloudNewPassword">Nova senha<input type="password" id="cloudNewPassword" autocomplete="new-password" minlength="8" required></label><label for="cloudNewPasswordConfirm">Confirme a nova senha<input type="password" id="cloudNewPasswordConfirm" autocomplete="new-password" minlength="8" required></label><button type="submit" class="btn btn-dark" id="cloudChangePassword">Atualizar senha</button></form><div id="cloudBoot" hidden><p id="cloudBootText">Preparando seu guarda-roupa…</p><div class="v3actions"><button class="btn btn-outline" id="cloudRetry">Atualizar página</button><button class="text-button" id="cloudExitBlocked">Sair da conta</button></div></div><p id="cloudMessage" class="cloud-message" aria-live="polite"></p>';
     $('authMount').replaceChildren(panel);
     $('cloudRetry').onclick=()=>location.reload();$('cloudExitBlocked').onclick=logout;
     for(const [id,mode] of [['cloudLoginForm','login'],['cloudSignupForm','signup'],['cloudResetForm','reset']])$(id).addEventListener('submit',e=>{e.preventDefault();authAction(mode)});
     $('cloudRecovery').addEventListener('submit',e=>{e.preventDefault();changePassword()});
+    $('cloudGoogle').onclick=async()=>{if(busy)return;busy=true;render();$('cloudGoogle').disabled=true;try{const c=await load();const {error}=await c.auth.signInWithOAuth({provider:'google',options:{redirectTo:returnUrl()}});if(error)throw error}catch(e){msg('Não foi possível entrar com Google: '+authError(e));busy=false;$('cloudGoogle').disabled=false;render()}};
     $('cloudGoSignup').onclick=()=>goAuth('signup');$('cloudGoReset').onclick=()=>goAuth('reset');
     for(const id of ['cloudBackSignup','cloudBackReset','cloudBackSent'])$(id).onclick=()=>goAuth('login');
     window.addEventListener('popstate',()=>{if(user||busy)return;const next=screenFrom(location.search);if(next!==authScreen)goAuth(next,{replace:true})});
@@ -917,7 +936,7 @@
   }
   function start(){ready=true;if(user&&!hadMeta&&state.pieces.length){meta.dirty=true;try{persist()}catch{}}render();if(user){schedule(100);window.addEventListener('online',()=>schedule(50));window.addEventListener('focus',()=>schedule(500));window.addEventListener('offline',render);setInterval(()=>{if(document.visibilityState==='visible'&&idle())sync(false)},30000);setInterval(()=>{if(ready&&user&&sessionExpiry&&sessionExpiry<=Date.now()/1000&&!navigator.onLine){ready=false;clearTimeout(timer);document.querySelectorAll('dialog[open]').forEach(d=>d.close());bootError='Sua sessão expirou. Conecte-se à internet e atualize a página para entrar novamente.';render()}},15000)}}
   function fail(message){ready=false;bootError=message;render()}
-  return {prepare,mount,start,touch,catalogClient:sessionClient,account:()=>!!user,canEnter:()=>!!user&&!recovery,fail,defaults,classify,validPath,screenFrom,passwordError,authError};
+  return {prepare,mount,start,touch,catalogClient:sessionClient,listVersions,exportVersion,account:()=>!!user,canEnter:()=>!!user&&!recovery,fail,defaults,classify,validPath,screenFrom,passwordError,authError};
 }
   function bulkCloset(){
   let rows=[],busy=false,stopped=false,run=0,phase='',message='',comparisonBusy=false,page=0,filter='all';
@@ -1511,6 +1530,42 @@
   return {mount,loadRemote,normalize,parsePrice,matches,csv,blank,seeds,styleLabel,shop};
 }
 
+  const TRASH_WINDOW=30*86400000;
+  function trashExpired(p,now=Date.now()){const t=Date.parse(p.deletedAt);return Number.isFinite(t)&&now-t>=TRASH_WINDOW}
+  function trashAvailable(p,now=Date.now()){const t=Date.parse(p.deletedAt);return Number.isFinite(t)&&t<=now&&now-t<TRASH_WINDOW}
+  async function renderTrash(){
+    const root=$('p0TrashList');if(!root||!state.db||!cloud.canEnter())return;
+    const rows=(await dbGetAll()).filter(p=>trashAvailable(p)).sort((a,b)=>b.deletedAt.localeCompare(a.deletedAt));
+    root.replaceChildren();
+    if(!rows.length){root.textContent='Nenhuma peça disponível para recuperação.';return}
+    for(const p of rows){
+      const row=document.createElement('div');row.className='favorite-row';
+      const name=document.createElement('strong');name.textContent=p.name;
+      const date=document.createElement('small');date.textContent=' · '+Math.ceil((TRASH_WINDOW-Date.now()+Date.parse(p.deletedAt))/86400000)+' dia(s) restantes';
+      const btn=document.createElement('button');btn.type='button';btn.className='btn btn-outline';btn.textContent='Restaurar';
+      btn.onclick=async()=>{btn.disabled=true;try{const current=(await dbGetAll()).find(q=>q.id===p.id);if(!current||!trashAvailable(current))throw Error('Peça indisponível.');const restored={...current};delete restored.deletedAt;await dbPut(restored);state.resultsGenerated=false;await refreshPieces();notify('Peça restaurada.')}catch(e){notify(e.message||'Não foi possível restaurar.');btn.disabled=false}};
+      row.append(name,date,btn);root.append(row);
+    }
+  }
+  function mountDataProtection(view){
+    if(!view||$('p0DataProtection'))return;
+    const root=document.createElement('section');root.id='p0DataProtection';root.className='panel';
+    root.innerHTML='<div class="eyebrow">SEGURANÇA E DADOS</div><h2>Proteção do seu closet</h2><p class="note">Exporte uma cópia privada com suas fotos e preferências. A restauração substitui o closet atual; exporte uma cópia antes.</p><div class="v3actions"><button type="button" class="btn btn-outline" id="p0Export">Exportar meus dados</button><button type="button" class="btn btn-outline" id="p0Import">Restaurar arquivo</button><input type="file" id="p0File" accept=".json,application/json" hidden></div><details><summary>Itens excluídos recentemente</summary><p class="note">Você pode recuperar peças por 30 dias. Favoritos e planejamentos removidos não são recriados.</p><div id="p0TrashList" aria-live="polite"></div></details>';
+    view.append(root);
+    $('p0Export').onclick=()=>exportBackup().catch(e=>notify(e.message||'Não foi possível exportar.'));
+    $('p0Import').onclick=()=>$('p0File').click();
+    $('p0File').onchange=importBackup;
+    const versions=document.createElement('details');
+    versions.innerHTML='<summary>Histórico automático de versões</summary><p class="note">As versões anteriores ficam disponíveis por 30 dias. Baixe a versão desejada e use Restaurar arquivo para recuperá-la. As fotos dependem do armazenamento protegido do VESTE.</p><button type="button" class="btn btn-outline" id="p0VersionsRefresh">Consultar versões</button><div id="p0VersionsList" aria-live="polite"></div>';
+    root.append(versions);
+    const loadVersions=async()=>{const list=$('p0VersionsList'),button=$('p0VersionsRefresh');button.disabled=true;list.textContent='Consultando…';try{
+      const rows=await cloud.listVersions();list.replaceChildren();
+      if(!rows.length){list.textContent='Nenhuma versão disponível.';return}
+      for(const row of rows){const item=document.createElement('div');item.className='favorite-row';const label=document.createElement('span');label.textContent='Versão '+row.revision+' · '+new Date(row.saved_at).toLocaleString('pt-BR');const download=document.createElement('button');download.type='button';download.className='btn btn-outline';download.textContent='Baixar';download.onclick=async()=>{download.disabled=true;try{await cloud.exportVersion(row.revision)}catch(e){notify(e.message||'Não foi possível baixar a versão.')}finally{download.disabled=false}};item.append(label,download);list.append(item)}
+    }catch(e){list.textContent='Histórico indisponível: '+(e.message||'Tente novamente.')}finally{button.disabled=false}};
+    $('p0VersionsRefresh').onclick=loadVersions;
+    versions.addEventListener('toggle',()=>{if(versions.open)loadVersions()});
+  }
   function experienceV7(){
     const by=id=>document.getElementById(id);
     document.querySelectorAll('[data-route="atelier"]').forEach(el=>el.remove());
@@ -1537,7 +1592,7 @@
       const d=document.createElement('details');d.className='v7-advanced';const s=document.createElement('summary');s.className='ai-heading';s.textContent='Recursos de IA';d.appendChild(s);aiPanel.replaceWith(d);d.appendChild(aiPanel);styleView.appendChild(d);
     }
 
-    const backup=by('exportBackup')?.closest('.panel');backup?.remove();
+    mountDataProtection(styleView);
 
     const bulk=by('v3bulk')?.closest('label');
     if(bulk){for(const node of bulk.childNodes){if(node.nodeType===3&&node.nodeValue?.includes('Cadastro em lote'))node.nodeValue='+ Adicionar várias fotos '}}
