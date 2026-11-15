@@ -164,7 +164,7 @@
   function resetFeedback(){if(!confirm('Limpar todas as curtidas e rejeições? Os favoritos serão mantidos.'))return;state.settings.loved=[];state.settings.rejected=[];saveLocal();state.resultsGenerated=false;renderStyle();notify('Feedback limpo.')} 
   async function exportBackup(){downloadBackup(await dbGetAll(),cloud.defaults(state.settings))}
   function downloadBackup(pieces,settings){const data={app:'veste',version:1,exportedAt:new Date().toISOString(),pieces,settings};const blob=new Blob([JSON.stringify(data)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`veste-backup-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);notify('Backup exportado. Guarde o arquivo em local seguro.')}
-  async function importBackup(e){const f=e.target.files?.[0];e.target.value='';if(!f)return;try{const raw=await f.text();if(raw.length>90*1024*1024)throw new Error('Arquivo de backup grande demais.');const d=JSON.parse(raw);if(d.app!=='veste'||!Array.isArray(d.pieces)||d.pieces.length>2000||!d.settings||typeof d.settings!=='object'||Array.isArray(d.settings)||new Set(d.pieces.map(p=>p?.id)).size!==d.pieces.length||d.pieces.some(p=>!p||typeof p.id!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(p.id)||typeof p.name!=='string'||!Object.hasOwn(GROUPS,p.group)||typeof p.image!=='string'||!/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(p.image)))throw new Error('O arquivo não é um backup válido do VESTE.');if(!confirm(`Restaurar ${d.pieces.length} peças? Isso substituirá o closet e as preferências atuais neste dispositivo.`))return;
+  async function importBackup(e){const f=e.target.files?.[0];e.target.value='';if(!f)return;try{const raw=await f.text();if(raw.length>90*1024*1024)throw new Error('Arquivo de backup grande demais.');const d=JSON.parse(raw);if(d.app!=='veste'||!Array.isArray(d.pieces)||d.pieces.length>2000||!d.settings||typeof d.settings!=='object'||Array.isArray(d.settings)||new Set(d.pieces.map(p=>p?.id)).size!==d.pieces.length||d.pieces.some(p=>!p||typeof p.id!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(p.id)||typeof p.name!=='string'||!Object.hasOwn(GROUPS,p.group)||typeof p.image!=='string'||!/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(p.image)))throw new Error('O arquivo não é um backup válido do VESTE.');if(!confirm(`Restaurar ${d.pieces.length} peças? Isso substituirá o closet e as preferências atuais e a alteração poderá ser sincronizada com a sua conta. Exporte o estado atual antes de continuar.`))return;
     await dbReplace(d.pieces);state.settings={...cloud.defaults(d.settings),prefs:Array.isArray(d.settings.prefs)?d.settings.prefs:[],loved:Array.isArray(d.settings.loved)?d.settings.loved:[],rejected:Array.isArray(d.settings.rejected)?d.settings.rejected:[],favorites:Array.isArray(d.settings.favorites)?d.settings.favorites:[],wearHistory:Array.isArray(d.settings.wearHistory)?d.settings.wearHistory:[]};delete state.settings.aiKey;delete state.settings.apiKey;if(!state.settings.v3||typeof state.settings.v3!=='object'||Array.isArray(state.settings.v3))state.settings.v3={};saveLocal();state.resultsGenerated=false;await refreshPieces();renderStyle();renderAdvanced();notify('Backup restaurado com sucesso!')
   }catch(err){notify(err.message||'Falha ao restaurar backup.')}}
   // VESTE 2 — Extras usam os mesmos dados locais da versão anterior.
@@ -809,6 +809,7 @@
       if(action==='conflict'){
         meta.conflict=true;persist();msg('Há mudanças diferentes na nuvem e neste dispositivo. Escolha qual versão manter; nenhuma foi sobrescrita.');return;
       }
+      if(action==='noop'&&row?.pieces?.some(p=>trashExpired(p)))action='push';
       if(action==='noop'){msg(row?'Tudo sincronizado.':'Conta conectada. Adicione peças ou importe o closet local.');return}
       if(action==='pull'){
         const pcs=await pullPieces(c,uid,row);
@@ -819,7 +820,7 @@
         }finally{applying=false;if(shell)shell.inert=false;if(nav)nav.inert=false}
         msg('Versão da nuvem carregada: '+pcs.length+' peças.');return;
       }
-      const pcs=(await dbGetAll()).filter(p=>!p.deletedAt||trashAvailable(p)),settings=defaults(state.settings);
+      const pcs=(await dbGetAll()).filter(p=>!trashExpired(p)),settings=defaults(state.settings);
       if(pcs.length>2000)throw new Error('Limite de 2.000 peças por closet.');
       const items=await uploadManifest(c,uid,pcs,row);
       if(!ready||kid()!==uid)throw new Error('Sessão alterada durante a sincronização.');
@@ -827,6 +828,7 @@
       const response=rev===null?await c.from(table).insert({...payload,user_id:uid}).select('revision').single():await c.from(table).update(payload).eq('user_id',uid).eq('revision',rev).select('revision').maybeSingle();
       if((response.error&&response.error.code==='23505')||(!response.error&&!response.data)){meta.conflict=true;persist();msg('Outro dispositivo sincronizou primeiro. Nenhuma versão foi sobrescrita.');return}
       if(response.error)throw response.error;
+      if(epoch===start&&kid()===uid&&pcs.length!==(await dbGetAll()).length){applying=true;try{await dbReplace(pcs);await refreshPieces()}finally{applying=false}}
       meta={revision:Number(response.data.revision),dirty:epoch!==start,conflict:false};persist();msg('Sincronizado: '+items.length+' peças, preferências e histórico.');
     }catch(e){msg('Sincronização pendente: '+String(e?.message||e).slice(0,250)+'. Seus dados locais foram mantidos.')}
     finally{busy=false;render();if(meta.dirty&&!meta.conflict&&epoch!==start)schedule(1600)}
@@ -1529,6 +1531,7 @@
 }
 
   const TRASH_WINDOW=30*86400000;
+  function trashExpired(p,now=Date.now()){const t=Date.parse(p.deletedAt);return Number.isFinite(t)&&now-t>=TRASH_WINDOW}
   function trashAvailable(p,now=Date.now()){const t=Date.parse(p.deletedAt);return Number.isFinite(t)&&t<=now&&now-t<TRASH_WINDOW}
   async function renderTrash(){
     const root=$('p0TrashList');if(!root||!state.db||!cloud.canEnter())return;
