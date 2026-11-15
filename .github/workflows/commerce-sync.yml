@@ -1,0 +1,34 @@
+name: VESTE commerce sync
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/awin_sync.py'
+      - '.github/workflows/commerce-sync.yml'
+  schedule:
+    - cron: '15 8 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: veste-commerce-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_URL: https://zodyzmeeossstkiwanqi.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      AWIN_PUBLISHER_ID: ${{ vars.AWIN_PUBLISHER_ID }}
+      AWIN_MERCHANT_IDS: ${{ vars.AWIN_MERCHANT_IDS || '118977' }}
+      AWIN_FEED_KEY: ${{ secrets.AWIN_FEED_KEY }}
+      AWIN_API_TOKEN: ${{ secrets.AWIN_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check configuration
+        run: |
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" && test -n "$AWIN_PUBLISHER_ID" && test -n "$AWIN_FEED_KEY" && test -n "$AWIN_API_TOKEN"
+      - name: Synchronize
+        run: python3 scripts/awin_sync.py
