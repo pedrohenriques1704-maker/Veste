@@ -683,7 +683,7 @@
   const guestDB='veste-closet-v1',guestSettings='veste-settings-v1',authKey='veste-supabase-auth-v1';
   const marker='veste-cloud-account-v1';
   const bucket='veste-photos',table='veste_closets';
-  let client=null, loading=null, user=null, ready=false, busy=false, applying=false, recovery=false, checked=false, epoch=0, timer=null, meta={revision:null,dirty:false,conflict:false}, setupDone=false, hadMeta=false, sessionExpiry=0, bootError='', profileChecked=false;
+  let client=null, loading=null, user=null, ready=false, busy=false, applying=false, recovery=false, checked=false, epoch=0, timer=null, meta={revision:null,dirty:false,conflict:false}, setupDone=false, hadMeta=false, sessionExpiry=0, bootError='', profileChecked=false, profileExisting=false;
   const kid=()=>user?.id||null;
   const get=(k)=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch{return null}};
   const put=(k,v)=>{localStorage.setItem(k,JSON.stringify(v))};
@@ -852,6 +852,7 @@
     busy=true;render();const uid=kid(),start=epoch;
     try{
       const c=await sessionClient(),row=await getRemote(c,uid),rev=baseRevision(row);checked=true;
+      if(!profileChecked)profileExisting=!!row||state.pieces.length>0||(hadMeta&&meta.revision!==null);
       let action=classify(meta.revision,rev,meta.dirty,force);
       // A lost local cache is not an instruction to erase remote data.
       if(action==='noop'&&row){const localIds=(await dbGetAll()).map(p=>p.id).sort().join('|'),remoteIds=(row.pieces||[]).map(p=>p.id).sort().join('|');if(localIds!==remoteIds)action='pull'}
@@ -880,7 +881,7 @@
       if(epoch===start&&kid()===uid&&state.db){const expired=(await dbGetAll()).filter(p=>trashExpired(p));if(expired.length&&epoch===start&&kid()===uid){applying=true;try{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');await new Promise((resolve,reject)=>{t.oncomplete=resolve;t.onabort=()=>reject(t.error);t.onerror=()=>reject(t.error);for(const p of expired){const req=store.get(p.id);req.onsuccess=()=>{if(req.result&&trashExpired(req.result))store.delete(p.id)}}});await refreshPieces()}finally{applying=false}}}
       meta={revision:Number(response.data.revision),dirty:epoch!==start,conflict:false};persist();profileChecked=true;msg('Sincronizado: '+items.length+' peças, preferências e histórico.');
     }catch(e){msg('Sincronização pendente: '+String(e?.message||e).slice(0,250)+'. Seus dados locais foram mantidos.')}
-    finally{busy=false;render();personalization.reconcile({ready:profileChecked,conflict:meta.conflict});if(meta.dirty&&!meta.conflict&&epoch!==start)schedule(1600)}
+    finally{busy=false;render();personalization.reconcile({ready:profileChecked,conflict:meta.conflict,existing:profileExisting});if(meta.dirty&&!meta.conflict&&epoch!==start)schedule(1600)}
   }
   async function guestMigration(){
     if(!user||busy||recovery||!idle())return;
@@ -983,7 +984,7 @@
     $('cloudKeepRemote').onclick=()=>{if(confirm('Substituir o closet deste aparelho pela versão da nuvem? Recomendamos exportar um backup primeiro.'))sync(true,'remote')};
     setupDone=true;render();
   }
-  function start(){ready=true;personalization.reconcile({ready:profileChecked,conflict:meta.conflict});if(user&&!hadMeta&&state.pieces.length){meta.dirty=true;try{persist()}catch{}}render();if(user){schedule(100);window.addEventListener('online',()=>schedule(50));window.addEventListener('focus',()=>schedule(500));window.addEventListener('offline',render);setInterval(()=>{if(document.visibilityState==='visible'&&idle())sync(false)},30000);setInterval(()=>{if(ready&&user&&sessionExpiry&&sessionExpiry<=Date.now()/1000&&!navigator.onLine){ready=false;clearTimeout(timer);document.querySelectorAll('dialog[open]').forEach(d=>d.close());bootError='Sua sessão expirou. Conecte-se à internet e atualize a página para entrar novamente.';render()}},15000)}}
+  function start(){ready=true;personalization.reconcile({ready:profileChecked,conflict:meta.conflict,existing:profileExisting});if(user&&!hadMeta&&state.pieces.length){meta.dirty=true;try{persist()}catch{}}render();if(user){schedule(100);window.addEventListener('online',()=>schedule(50));window.addEventListener('focus',()=>schedule(500));window.addEventListener('offline',render);setInterval(()=>{if(document.visibilityState==='visible'&&idle())sync(false)},30000);setInterval(()=>{if(ready&&user&&sessionExpiry&&sessionExpiry<=Date.now()/1000&&!navigator.onLine){ready=false;clearTimeout(timer);document.querySelectorAll('dialog[open]').forEach(d=>d.close());bootError='Sua sessão expirou. Conecte-se à internet e atualize a página para entrar novamente.';render()}},15000)}}
   function fail(message){ready=false;bootError=message;render()}
   return {prepare,mount,start,touch,catalogClient:sessionClient,listVersions,exportVersion,account:()=>!!user,canEnter:()=>!!user&&!recovery,fail,defaults,classify,validPath,screenFrom,passwordError,authError};
 }
@@ -1803,25 +1804,26 @@
       // Do not reset or remove closet pieces, ratings, radar, favorites or history.
       saveLocal();open=false;waiting=false;show();renderPanel();discovery.useProfile(before!==profileAudience());renderAll();if(mandatory)navigate('home');notify('Seu perfil foi salvo.');
     }
-    function reconcile({ready=false,conflict=false}={}){
+    function reconcile({ready=false,conflict=false,existing=false}={}){
       if(!mounted)return;
       renderPanel();
       // Never gate recovery/conflict resolution or ask an already-completed user again.
       if(open&&!mandatory)return;
       if(profile().complete||conflict){const changed=waiting||open;waiting=false;open=false;if(changed)show();discovery.useProfile(false);return}
-      if(ready){if(!open)begin(true);return}
+      if(ready){if(existing&&!open){waiting=false;show();renderPanel();return}if(!open)begin(true);return}
       if(!open&&!waiting){waiting=true;show()}
     }
     function renderPanel(){
       const root=$('v74ProfilePanel');if(!root)return;const p=profile();
       root.querySelector('[data-v74-summary]').textContent=p.complete?(PROFILE_AUDIENCES[p.audience]||'Todos')+(p.clothingSize?' · Roupa '+p.clothingSize:'')+(p.shoeSize?' · Calçado '+p.shoeSize:''):'Personalize as descobertas e recomendações do VESTE.';
-      root.querySelector('[data-v74-edit]').textContent=p.complete?'Editar meu perfil':'Configurar meu perfil';
+      root.querySelector('[data-v74-edit]').textContent=p.complete?'Editar meu perfil':'Configurar meu perfil';const welcome=$('v74HomePrompt');if(welcome)welcome.hidden=p.complete;
     }
     function mount(){
       if(mounted)return;mounted=true;
       const panel=document.createElement('section');panel.id='v74ProfilePanel';panel.className='panel';
       panel.innerHTML='<p class="eyebrow">VESTE / PERSONALIZAÇÃO</p><h2>Seu perfil pessoal</h2><p data-v74-summary></p><p class="note">O filtro de vestuário é uma preferência, nunca uma restrição. Edite ou remova suas informações opcionais quando quiser.</p><button type="button" class="btn btn-outline" data-v74-edit>Configurar meu perfil</button>';
       $('view-style').querySelector('.page-heading').insertAdjacentElement('afterend',panel);panel.querySelector('[data-v74-edit]').onclick=()=>begin(false);
+      const welcome=document.createElement('section');welcome.id='v74HomePrompt';welcome.className='panel';welcome.innerHTML='<p class="eyebrow">SEU PERFIL VESTE</p><h3>Descubra de um jeito mais seu.</h3><p>Personalize o filtro de vestuário e as recomendações sem alterar as roupas que você já cadastrou.</p><button type="button" class="btn btn-outline" id="v74HomeEdit">Configurar meu perfil</button>';const today=$('todayPanel');if(today)today.insertAdjacentElement('beforebegin',welcome);else $('view-home').prepend(welcome);$('v74HomeEdit').onclick=()=>begin(false);
       const root=document.createElement('section');root.id='v74Gate';root.className='v74-gate';root.hidden=true;root.setAttribute('aria-label','Personalização do VESTE');
       root.innerHTML='<div class="v74-wrap"><div class="v74-brand"><div class="brand"><span class="brand-mark">✳</span><span>VESTE<span class="brand-dot">.</span></span></div><span id="v74Progress" class="eyebrow"></span></div><div id="v74Step"></div><p id="v74Error" role="alert" class="note"></p><div class="v74-buttons"><button type="button" id="v74Back" class="btn btn-outline">Voltar</button><button type="button" id="v74Next" class="btn btn-dark">Continuar</button></div><button type="button" id="v74Cancel" class="text-button">Cancelar edição</button><button type="button" id="v74Logout" class="text-button">Sair da conta</button></div>';
       document.body.appendChild(root);
