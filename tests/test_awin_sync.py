@@ -35,4 +35,36 @@ class TestFeed(unittest.TestCase):
             self.assertEqual(len(data),1); self.assertEqual(data[0]["id"],"1");self.assertTrue(data[0]["attributed"])
             log.assert_called_once()
 
+
+    def test_csv_header_and_multiline(self):
+        data=('Advertiser ID;Advertiser Name;Membership Status;Datafeed Format;URL\n'
+              '118977;"Lauri;\nEsporte";active;Awin;https://productdata.awin.com/example\n').encode()
+        rows=a.rows(data)
+        self.assertEqual(rows[0]["advertiser_name"],"Lauri;\nEsporte")
+        self.assertEqual(a.select_feeds(data,{118977})[118977]["advertiser_id"],"118977")
+    def test_csv_long_quoted_field(self):
+        data=('name,description,price\n"shoe","'+('long text, with commas\n'*500)+'",100\n').encode()
+        self.assertEqual(a.rows(data)[0]["price"],"100")
+    def test_csv_reject_partial(self):
+        with self.assertRaises(a.SyncIssue):
+            a.rows(b'name,price,link\nshoe,100\n')
+    def test_google_and_unjoined_excluded(self):
+        data=(b'Advertiser ID,Advertiser Name,Membership Status,Datafeed Format,URL\n'
+              b'118977,Lauri,active,Google,https://api.awin.com/x\n'
+              b'118977,Lauri,pending,Awin,https://productdata.awin.com/x\n')
+        self.assertEqual(a.select_feeds(data,{118977}),{})
+    def test_legacy_fallback_and_import(self):
+        import csv,io
+        meta=(b'Merchant ID,Merchant Name,Membership Status,Last Imported,URL\n'
+              b'118977,Lauri,active,2026-11-15 14:08:15,https://productdata.awin.com/feed\n')
+        output=io.StringIO()
+        p=item(); writer=csv.DictWriter(output,fieldnames=p.keys());writer.writeheader();writer.writerow(p)
+        with patch.dict(a.os.environ,{"AWIN_PUBLISHER_ID":"123","AWIN_FEED_KEY":"test","AWIN_MERCHANT_IDS":"118977"}),patch.object(a,"request_stage",side_effect=[a.SyncIssue("feed_list_failed"),meta,output.getvalue().encode()]),patch.object(a,"db") as db,patch.object(a,"log") as log:
+            a.sync_catalog()
+            self.assertEqual(db.call_args.args[0],"rpc/veste_catalog_snapshot_import")
+            row=db.call_args.args[1]["records"][0]
+            self.assertEqual(row["id"],"awin:118977:tenis-asics-azul")
+            self.assertEqual(row["source_updated_at"],"2026-11-15T14:08:15+00:00")
+            log.assert_called_once()
+
 if __name__=="__main__":unittest.main()
