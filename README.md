@@ -128,3 +128,7 @@ O provador FASHN e a geração de imagem Gemini foram descontinuados no aplicati
 ## VESTE 6.1 — compras inteligentes
 
 Combinações em colagens com o closet, semelhança por metadados, lacunas por categoria, filtros de compra consciente, modo explorar estilos e resumo das curtidas. Radar acompanha preços dos itens salvos (até 30 mudanças), alvo e alertas no app. Preços atualizados por reimportação do catálogo ou conferência manual; identidade por URL. Não há monitoramento automático da loja, push ou preço em tempo real. Testes de lógica simulados; validar iPhone e sincronização após deploy.
+
+## VESTE 6.2 — catálogo Awin no Supabase
+
+O Descobrir passa a carregar o catálogo compartilhado `veste_catalog_products` somente para usuários autenticados, sem copiar centenas de produtos para as configurações pessoais. A primeira carga real consolidou 2.557 variantes da Lauri Esporte em 743 produtos únicos (tamanhos agregados), com links afiliados, preços, marca, cor, estoque e imagens. O cliente pagina até 3.000 produtos e mantém importação manual apenas como fallback. A atualização automática da Awin ainda depende de cadastrar uma nova Product Feed key como segredo do backend; a chave vista em screenshots não deve ser reutilizada em produção.
