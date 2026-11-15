@@ -1,0 +1,15 @@
+name: VESTE P2 validation
+on:
+  push:
+    branches: ['feature/p2-smart-shopping']
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: node --check app.js && node --check admin/admin.js && node tests/p2-shopping.cjs
+      - run: python3 -m py_compile scripts/awin_sync.py && python3 -m unittest discover -s tests -p 'test_*.py'
