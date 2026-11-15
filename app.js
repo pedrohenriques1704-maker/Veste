@@ -828,7 +828,7 @@
       const response=rev===null?await c.from(table).insert({...payload,user_id:uid}).select('revision').single():await c.from(table).update(payload).eq('user_id',uid).eq('revision',rev).select('revision').maybeSingle();
       if((response.error&&response.error.code==='23505')||(!response.error&&!response.data)){meta.conflict=true;persist();msg('Outro dispositivo sincronizou primeiro. Nenhuma versão foi sobrescrita.');return}
       if(response.error)throw response.error;
-      if(epoch===start&&kid()===uid&&pcs.length!==(await dbGetAll()).length){applying=true;try{await dbReplace(pcs);await refreshPieces()}finally{applying=false}}
+      if(epoch===start&&kid()===uid&&state.db){const expired=(await dbGetAll()).filter(p=>trashExpired(p));if(expired.length&&epoch===start&&kid()===uid){applying=true;try{const t=state.db.transaction('pieces','readwrite'),store=t.objectStore('pieces');await new Promise((resolve,reject)=>{t.oncomplete=resolve;t.onabort=()=>reject(t.error);t.onerror=()=>reject(t.error);for(const p of expired){const req=store.get(p.id);req.onsuccess=()=>{if(req.result&&trashExpired(req.result))store.delete(p.id)}}});await refreshPieces()}finally{applying=false}}}
       meta={revision:Number(response.data.revision),dirty:epoch!==start,conflict:false};persist();msg('Sincronizado: '+items.length+' peças, preferências e histórico.');
     }catch(e){msg('Sincronização pendente: '+String(e?.message||e).slice(0,250)+'. Seus dados locais foram mantidos.')}
     finally{busy=false;render();if(meta.dirty&&!meta.conflict&&epoch!==start)schedule(1600)}
