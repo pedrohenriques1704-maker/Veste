@@ -1,6 +1,11 @@
 name: VESTE commerce sync
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/awin_sync.py'
+      - '.github/workflows/commerce-sync.yml'
   schedule:
     - cron: '15 8 * * *'
 permissions:
