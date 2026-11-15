@@ -1,4 +1,4 @@
-const CACHE='veste-pwa-v4-7';
+const CACHE='veste-pwa-v4-8';
 const ASSETS=['./','./index.html','./styles.css','./extra.css','./app.js','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting()});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('veste-pwa-')&&k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim()});
