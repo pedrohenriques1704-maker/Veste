@@ -1692,6 +1692,27 @@
     const rejected=new Set(votes.filter(v=>!v.liked).map(v=>rejectedProductKey(v.item)).filter(Boolean));
     return p=>ids.has(p.id)||rejected.has(rejectedProductKey(p));
   }
+  function garmentType(p){
+    const title=String(p.name||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+    const match=title.match(/\b(sueter|pulover|tricot|trico|camiseta|t-shirt|camisa|polo|blusa|regata|cropped|top|body|moletom|cardigan|jaqueta|casaco|blazer|colete|vestido|macacao|calca|legging|bermuda|shorts?|saia|tenis|chuteira|bota|sandalia|chinelo|sapato|bolsa|mochila|bone|meia)s?\b/);
+    if(!match)return p.group;
+    const type=match[1];
+    if(["pulover","tricot","trico"].includes(type))return "sueter";
+    if(type==="t-shirt")return "camiseta";
+    return type==="shorts"?"short":type;
+  }
+  function nextDiscoveryCard(sorted,votes,order){
+    const first=sorted[0];
+    if(!first||order==="cheap"||order==="expensive")return first;
+    const recent=votes.slice(-4).reverse().map(v=>v.item).filter(Boolean).map(garmentType);
+    let best=first, oldest=-1;
+    for(const candidate of sorted){
+      const age=recent.indexOf(garmentType(candidate));
+      if(age===-1)return candidate;
+      if(age>oldest){best=candidate;oldest=age}
+    }
+    return best;
+  }
   function options(){
     const d=data(),seen=seenProducts(d.votes),catalog=remoteCatalog.length?remoteCatalog:d.catalog.map(normalize).filter(Boolean),all=(source==="idea"||!catalog.length?seeds:catalog).filter(p=>!seen(p)&&matches(p,f,source)).filter(p=>{const a=shop.analyze(p,state.pieces);return (!f.avoidSimilar||!a.similar.length)&&(!f.gapsOnly||["missing","expand"].includes(a.gap))&&(!f.hasLooks||shop.looks(p,state.pieces).length>0)});
     if(source==="catalog"&&f.order==="cheap")return all.sort((a,b)=>(a.price??Infinity)-(b.price??Infinity));
@@ -1716,7 +1737,7 @@
     const st=shop.stats(d),lead=Object.entries(st).filter(([,v])=>v.likes>0).sort((a,b)=>(b[1].likes-b[1].passes)-(a[1].likes-a[1].passes)).slice(0,6);
     $("discTaste").innerHTML='<strong>Seu gosto em evolução</strong><p>'+liked.length+' curtidas · '+d.votes.filter(v=>!v.liked).length+' rejeições</p>'+(lead.length?'<div class="disc-tags">'+lead.map(([k,v])=>'<span>'+E(styleLabel[k])+' · '+v.likes+' ♥</span>').join("")+'</div>':'<p>As escolhas vão revelar novos estilos.</p>');
     if(tab==="feed"){
-      const all=options();current=all.find(p=>p.id===current?.id)||all[0]||null;$("discCount").textContent=all.length+" opções ainda não avaliadas · "+(audienceLabel[f.audience]||"Todos");$("discCard").innerHTML=current?tile(current):'<div class="disc-body"><h2>Nenhuma peça nos filtros</h2><p>'+(source==="catalog"&&!d.catalog.length?"Importe um catálogo real ou explore inspirações.":"Altere os filtros ou reveja as peças puladas.")+'</p></div>';
+      const all=options();current=all.find(p=>p.id===current?.id)||nextDiscoveryCard(all,d.votes,f.order)||null;$("discCount").textContent=all.length+" opções ainda não avaliadas · "+(audienceLabel[f.audience]||"Todos");$("discCard").innerHTML=current?tile(current):'<div class="disc-body"><h2>Nenhuma peça nos filtros</h2><p>'+(source==="catalog"&&!d.catalog.length?"Importe um catálogo real ou explore inspirações.":"Altere os filtros ou reveja as peças puladas.")+'</p></div>';
       $("discLike").disabled=!current;$("discPass").disabled=!current;$("discUndo").disabled=!history.length;
     }else{
       const saved=liked.slice().reverse().map(v=>{const p=stored(v.item),h=shop.track(d,v.id)?.history||[];if(p&&h.length)p.price=h[h.length-1].price;return p}).filter(p=>p&&(radarMode!=="alerts"||p.offerAvailable!==false&&shop.signal(shop.track(d,p.id))?.fresh));
