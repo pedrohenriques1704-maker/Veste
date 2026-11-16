@@ -22,7 +22,7 @@ jobs:
       SUPABASE_URL: https://zodyzmeeossstkiwanqi.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       AWIN_PUBLISHER_ID: ${{ vars.AWIN_PUBLISHER_ID }}
-      AWIN_MERCHANT_IDS: ${{ format('{0},17652', vars.AWIN_MERCHANT_IDS || '118977') }}
+      AWIN_MERCHANT_IDS: ${{ format('{0},17652,17648', vars.AWIN_MERCHANT_IDS || '118977') }}
       AWIN_FEED_KEY: ${{ secrets.AWIN_FEED_KEY }}
       AWIN_API_TOKEN: ${{ secrets.AWIN_API_TOKEN }}
     steps:
@@ -30,5 +30,7 @@ jobs:
       - name: Check configuration
         run: |
           test -n "$SUPABASE_SERVICE_ROLE_KEY" && test -n "$AWIN_PUBLISHER_ID" && test -n "$AWIN_FEED_KEY" && test -n "$AWIN_API_TOKEN"
+      - name: Test catalog importer
+        run: python3 -m unittest discover -s tests -p test_awin_sync.py
       - name: Synchronize
         run: python3 scripts/awin_sync.py
