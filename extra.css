@@ -171,3 +171,15 @@
 
 /* Weekly planner — replace a single day's outfit without resetting the plan. */
 .week-look-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.week-look-actions .btn{flex:1 1 100%;min-width:0;white-space:normal;line-height:1.35;margin:0}.week-replace-btn{min-height:44px}.week-replace-note{font-size:12px!important;line-height:1.45;color:var(--muted,#817b74);margin:8px 0 0}.week-look-actions .btn:disabled{opacity:.5;cursor:default}
+
+/* Weekly planner: visual, multi-select piece replacement. */
+.week-replace-dialog{width:min(520px,calc(100vw - 28px));max-width:calc(100vw - 28px);max-height:calc(100dvh - 36px);overflow-y:auto;padding:20px;box-sizing:border-box}
+.week-replace-dialog h2{margin:8px 0 12px}.week-replace-dialog p{line-height:1.5}
+.week-replace-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0}
+.week-replace-piece{position:relative;display:flex;flex-direction:column;gap:7px;min-width:0;min-height:110px;padding:8px;border:1px solid var(--line,#e7e0d7);border-radius:12px;background:var(--paper,#fffdfa);cursor:pointer;overflow:hidden}
+.week-replace-piece.selected{border:2px solid var(--accent,#aa624b);padding:7px;background:var(--soft,#f3e7df)}
+.week-replace-piece input{position:absolute;top:8px;right:8px;width:19px;height:19px;margin:0;accent-color:var(--accent,#aa624b);z-index:1;cursor:pointer}
+.week-replace-piece img{display:block;width:100%;aspect-ratio:4/5;max-height:128px;object-fit:contain;border-radius:7px;background:var(--bg,#f7f4ef)}
+.week-replace-piece span{font-size:12px;font-weight:650;line-height:1.25;overflow-wrap:anywhere}
+.week-replace-dialog-actions{display:grid;gap:8px}.week-replace-dialog-actions .btn{white-space:normal;min-height:44px}.week-replace-dialog-actions button:disabled{opacity:.48;cursor:default}
+@media(max-width:420px){.week-replace-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.week-replace-dialog{padding:16px}}
