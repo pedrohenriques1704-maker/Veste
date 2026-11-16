@@ -204,12 +204,43 @@
       let chosen=null,best=-Infinity;for(const c of choices){let score=c.score+(!usedKeys.has(c.key)?28:-35);for(const id of c.ids)score-=(used.get(id)||0)*8;score-=Math.max(0,c.ids.length-2);if(score>best){best=score;chosen=c}}
       if(chosen){usedKeys.add(chosen.key);for(const id of chosen.ids)used.set(id,(used.get(id)||0)+1)}plan.push({date,occasion:oc,weather,ids:chosen?.ids||[],key:chosen?.key||null,temp:dailyForecast(date)?.temp??null,rain:dailyForecast(date)?.rain??null})}
     state.settings.weekPlan={createdAt:new Date().toISOString(),city:state.forecast?.cityLabel||null,withForecast:!!state.forecast,days:plan};state.settings.weekdayOccasion=$('weekdayOccasion').value;state.settings.weekendOccasion=$('weekendOccasion').value;saveLocal();renderWeek();notify('Semana planejada com o seu closet.')}
+  function weekLookWorn(day){const key=day.key||lookKey(day.ids||[]);return !!key&&(state.settings.wearHistory||[]).some(w=>w.key===key&&(w.date||(w.at?localISO(new Date(w.at)):''))===day.date)}
+  function weekReplacementChoice(choices,day,otherDays){
+    const excluded=new Set([day.key||lookKey(day.ids||[]),...(Array.isArray(day.skippedKeys)?day.skippedKeys:[])].filter(Boolean)),used=new Map(),usedKeys=new Set();
+    for(const other of otherDays){const ids=Array.isArray(other.ids)?other.ids:[];if(other.key||ids.length)usedKeys.add(other.key||lookKey(ids));for(const id of ids)used.set(id,(used.get(id)||0)+1)}
+    const core=ids=>lookKey(ids.filter(id=>['top','bottom','onepiece'].includes(pieceById(id)?.group))),oldCore=core(day.ids||[]);
+    const valid=choices.filter(c=>c?.key&&Array.isArray(c.ids)&&!excluded.has(c.key)&&c.ids.every(id=>pieceById(id)&&pieceById(id).available!==false));
+    // Prefer a different core outfit and avoid duplicating a look already planned for another day.
+    const fresh=valid.filter(c=>!usedKeys.has(c.key)),pool=fresh.length?fresh:valid;
+    const different=pool.filter(c=>core(c.ids)!==oldCore),options=different.length?different:pool;
+    let chosen=null,best=-Infinity;
+    for(const c of options){let score=(Number(c.score)||0)-Math.max(0,c.ids.length-2);for(const id of c.ids)score-=(used.get(id)||0)*8;if(score>best){best=score;chosen=c}}
+    return chosen;
+  }
+  function replaceWeekLook(date,expectedKey){
+    if(!cloud.canEnter())return;
+    const plan=state.settings.weekPlan,day=plan?.days?.find(d=>d.date===date);
+    if(!day||date<localISO(new Date())||weekLookWorn(day)||(day.key||'')!==expectedKey)return;
+    const skipped=[...new Set([...(Array.isArray(day.skippedKeys)?day.skippedKeys:[]),day.key||lookKey(day.ids||[])].filter(Boolean))];
+    const otherDays=plan.days.filter(d=>d!==day);
+    try{
+      // Exclude declined looks before the generator truncates its ranked result pool.
+      const choices=generateCandidates({occasion:day.occasion,weather:day.weather,rain:day.rain??null,pool:120,excludeKeys:skipped});
+      const chosen=weekReplacementChoice(choices,{...day,skippedKeys:skipped},otherDays);
+      const next={...day,skippedKeys:skipped,replacementUnavailable:!chosen};
+      if(chosen){next.ids=chosen.ids.slice();next.key=chosen.key}
+      state.settings.weekPlan={...plan,days:plan.days.map(d=>d===day?next:d)};saveLocal();renderWeek();
+      // Keep keyboard and assistive-technology focus on the same day without scrolling.
+      const button=Array.from($('weekGrid')?.querySelectorAll('[data-week-replace]')||[]).find(b=>b.dataset.weekReplace===date);if(button)button.focus({preventScroll:true});
+      notify(chosen?'Novo look para este dia. Os demais continuam iguais.':'Sem outra combinação disponível para este dia. O look anterior foi mantido.');
+    }catch(err){notify('Não foi possível trocar o look. Seu planejamento foi mantido.')}
+  }
   function renderWeek(){const root=$('weekGrid');if(!root)return;const plan=state.settings.weekPlan;const hint=$('weekHint');if($('weekdayOccasion')){$('weekdayOccasion').value=state.settings.weekdayOccasion||'trabalho';$('weekendOccasion').value=state.settings.weekendOccasion||'casual'}
     if(!plan?.days?.length){root.innerHTML='<div class="empty-state"><div class="empty-symbol">▤</div><h3>Sua semana começa aqui.</h3><p>Cadastre algumas peças e toque em “Planejar 7 dias” para receber sugestões de looks de hoje até os próximos seis dias.</p></div>';hint.textContent='O planejamento usa previsão se já tiver sido consultada em Início. Caso contrário, utiliza o clima selecionado em Criar looks.';return}
     const outdated=plan.days[0].date!==localISO(new Date());hint.textContent=(outdated?'Este plano começa em outra data. Gere novamente para atualizar. ':'')+(plan.withForecast?'Clima consultado: '+(plan.city||'cidade selecionada')+'.':'Plano sem previsão online; use a opção Ver previsão em Início para melhorar a adequação ao clima.');
     const fmt=new Intl.DateTimeFormat('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
-    root.innerHTML=plan.days.map((day,i)=>{const items=day.ids.map(pieceById).filter(Boolean);const missing=items.length!==day.ids.length;if(!items.length||missing){return `<article class="week-card"><div class="week-date">${escapeHTML(fmt.format(new Date(day.date+'T12:00:00')))}</div><p>Não há combinação suficiente para este dia. Cadastre mais peças ou refaça o plano.</p></article>`}
-      return `<article class="week-card"><div class="week-card-top"><div class="eyebrow">DIA ${String(i+1).padStart(2,'0')}</div><span>${day.temp!=null?Math.round(day.temp)+'°C':'Clima manual'}</span></div><div class="week-date">${escapeHTML(fmt.format(new Date(day.date+'T12:00:00')))}</div>${compactCollage(day.ids)}<div class="week-card-body"><h3>${escapeHTML(items[0]?.name||'Look')} ${items[1]?' + '+escapeHTML(items[1].name):''}</h3><p>${escapeHTML(OCCASIONS[day.occasion]||'Dia a dia')} · ${escapeHTML(SEASONS[day.weather]||'Ameno')}${day.rain>=50?' · ☂ chuva '+Math.round(day.rain)+'%':''}</p><small>${escapeHTML(items.map(p=>p.name).join(' · '))}</small><button class="btn btn-outline" data-week-wear="${day.date}" ${day.date>localISO(new Date())?'disabled title="Registre após usar"':''}>✓ Registrar uso</button></div></article>`}).join('')}
+    root.innerHTML=plan.days.map((day,i)=>{const today=localISO(new Date()),worn=weekLookWorn(day),canReplace=day.date>=today&&!worn,replaceButton=canReplace?`<button type="button" class="btn btn-outline week-replace-btn" data-week-replace="${escapeHTML(day.date)}" data-week-key="${escapeHTML(day.key||'')}">${day.replacementUnavailable?'↻ Tentar outro look':'× Não gostei · trocar look'}</button>`:'',replacementNote=day.replacementUnavailable?`<p class="week-replace-note" role="status">Nenhuma nova combinação encontrada. A sugestão anterior foi mantida.</p>`:'',items=day.ids.map(pieceById).filter(Boolean);const missing=items.length!==day.ids.length;if(!items.length||missing){return `<article class="week-card"><div class="week-date">${escapeHTML(fmt.format(new Date(day.date+'T12:00:00')))}</div><p>Não há combinação suficiente para este dia. Cadastre mais peças ou tente outra combinação.</p>${replaceButton}${replacementNote}</article>`}
+      return `<article class="week-card"><div class="week-card-top"><div class="eyebrow">DIA ${String(i+1).padStart(2,'0')}</div><span>${day.temp!=null?Math.round(day.temp)+'°C':'Clima manual'}</span></div><div class="week-date">${escapeHTML(fmt.format(new Date(day.date+'T12:00:00')))}</div>${compactCollage(day.ids)}<div class="week-card-body"><h3>${escapeHTML(items[0]?.name||'Look')} ${items[1]?' + '+escapeHTML(items[1].name):''}</h3><p>${escapeHTML(OCCASIONS[day.occasion]||'Dia a dia')} · ${escapeHTML(SEASONS[day.weather]||'Ameno')}${day.rain>=50?' · ☂ chuva '+Math.round(day.rain)+'%':''}</p><small>${escapeHTML(items.map(p=>p.name).join(' · '))}</small><div class="week-look-actions">${replaceButton}<button class="btn btn-outline" data-week-wear="${escapeHTML(day.date)}" ${day.date>today?'disabled title="Registre após usar"':''}>${worn?'✓ Uso registrado · ver diário':'✓ Registrar uso'}</button></div>${replacementNote}</div></article>`}).join('')}
   function showAISetupGuide(context='Este recurso'){
     const root=$('aiGuideBanner');
     if(root){
@@ -296,6 +327,7 @@
     const fav=e.target.closest('[data-favorite]');if(fav){toggleFavorite(fav.dataset.favorite);return}
     const unfav=e.target.closest('[data-unfavorite]');if(unfav){state.settings.favorites=state.settings.favorites.filter(f=>f.key!==unfav.dataset.unfavorite);saveLocal();renderAll();renderStyle();return}
     const worn=e.target.closest('[data-wear]');if(worn){wearLook(worn.dataset.wear);return}
+    const weekReplace=e.target.closest('[data-week-replace]');if(weekReplace){replaceWeekLook(weekReplace.dataset.weekReplace,weekReplace.dataset.weekKey||'');return}
     const weekWear=e.target.closest('[data-week-wear]');if(weekWear){const day=state.settings.weekPlan?.days?.find(d=>d.date===weekWear.dataset.weekWear);if(day&&localISO(new Date())>=day.date)markWorn(day.ids,day.key,day.date);return}
     const avoidRemove=e.target.closest('[data-remove-avoid]');if(avoidRemove){state.settings.avoidPairs=(state.settings.avoidPairs||[]).filter(p=>p!==avoidRemove.dataset.removeAvoid);saveLocal();renderAdvanced();return}
     const todayToLooks=e.target.closest('[data-today-go]');if(todayToLooks){$('weather').value=todayWeatherContext();navigate('looks');generateLooks();return}
@@ -521,6 +553,7 @@
   function makeCandidate(o,ctx,required=[]){if(!valid(o,ctx,required))return null;const ids=[o.top,o.bottom,o.shoes,o.layer,o.accessory].filter(Boolean);const key=lookKey(ids);return {...o,ids,key,score:scoreCandidate({...o,ids},ctx)}}
   generateCandidates=function(ctx){
     const m=intelligence();activeIntelligence=m;try{
+    const excluded=new Set(Array.isArray(ctx.excludeKeys)?ctx.excludeKeys:[]);
     const required=Array.isArray(ctx.required)?ctx.required:[];
     if(required.some(id=>!pieceById(id)||pieceById(id).available===false))return [];
     const lockedBy={};for(const id of required){const p=pieceById(id),s=slot[p.group];if(lockedBy[s]&&lockedBy[s]!==id)return [];lockedBy[s]=id}
@@ -537,7 +570,7 @@
       const sh=opts("shoes",b||t);const ly=opts("layer",t,ctx.weather!=="quente");const ac=opts("accessory",t,state.settings.preferAccessories!==false);
       for(const s of sh)for(const l of ly)for(const a of ac){
         const o={top:t.id,bottom:b?.id||null,shoes:s?.id||null,layer:l?.id||null,accessory:a?.id||null};
-        const c=makeCandidate(o,ctx,required);if(c&&by.shoes?.length&&!c.shoes)c.score-=18;if(c&&!seen.has(c.key)){seen.add(c.key);results.push(c)}
+        const c=makeCandidate(o,ctx,required);if(c&&by.shoes?.length&&!c.shoes)c.score-=18;if(c&&!excluded.has(c.key)&&!seen.has(c.key)){seen.add(c.key);results.push(c)}
       }
     }
     results.sort((a,b)=>b.score-a.score);
