@@ -183,3 +183,6 @@
 .week-replace-piece span{font-size:12px;font-weight:650;line-height:1.25;overflow-wrap:anywhere}
 .week-replace-dialog-actions{display:grid;gap:8px}.week-replace-dialog-actions .btn{white-space:normal;min-height:44px}.week-replace-dialog-actions button:disabled{opacity:.48;cursor:default}
 @media(max-width:420px){.week-replace-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.week-replace-dialog{padding:16px}}
+
+/* Shared visual replacement dialog: honor explicitly pinned pieces on Looks. */
+.week-replace-piece.locked{cursor:default;opacity:.72}.week-replace-piece.locked input{cursor:default}.week-replace-dialog-actions .text-button[hidden]{display:none!important}#looksGrid .look-actions [data-reject]{white-space:normal;line-height:1.3;min-height:44px}
