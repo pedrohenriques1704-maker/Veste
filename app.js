@@ -205,35 +205,67 @@
       if(chosen){usedKeys.add(chosen.key);for(const id of chosen.ids)used.set(id,(used.get(id)||0)+1)}plan.push({date,occasion:oc,weather,ids:chosen?.ids||[],key:chosen?.key||null,temp:dailyForecast(date)?.temp??null,rain:dailyForecast(date)?.rain??null})}
     state.settings.weekPlan={createdAt:new Date().toISOString(),city:state.forecast?.cityLabel||null,withForecast:!!state.forecast,days:plan};state.settings.weekdayOccasion=$('weekdayOccasion').value;state.settings.weekendOccasion=$('weekendOccasion').value;saveLocal();renderWeek();notify('Semana planejada com o seu closet.')}
   function weekLookWorn(day){const key=day.key||lookKey(day.ids||[]);return !!key&&(state.settings.wearHistory||[]).some(w=>w.key===key&&(w.date||(w.at?localISO(new Date(w.at)):''))===day.date)}
-  function weekReplacementChoice(choices,day,otherDays){
-    const excluded=new Set([day.key||lookKey(day.ids||[]),...(Array.isArray(day.skippedKeys)?day.skippedKeys:[])].filter(Boolean)),used=new Map(),usedKeys=new Set();
+  function weekReplacementChoice(choices,day,otherDays,selectedIds=[],blockedIds=[]){
+    const excluded=new Set([day.key||lookKey(day.ids||[]),...(Array.isArray(day.skippedKeys)?day.skippedKeys:[])].filter(Boolean)),blocked=new Set([...blockedIds,...selectedIds]),used=new Map(),usedKeys=new Set();
     for(const other of otherDays){const ids=Array.isArray(other.ids)?other.ids:[];if(other.key||ids.length)usedKeys.add(other.key||lookKey(ids));for(const id of ids)used.set(id,(used.get(id)||0)+1)}
     const core=ids=>lookKey(ids.filter(id=>['top','bottom','onepiece'].includes(pieceById(id)?.group))),oldCore=core(day.ids||[]);
-    const valid=choices.filter(c=>c?.key&&Array.isArray(c.ids)&&!excluded.has(c.key)&&c.ids.every(id=>pieceById(id)&&pieceById(id).available!==false));
-    // Prefer a different core outfit and avoid duplicating a look already planned for another day.
+    const valid=choices.filter(c=>c?.key&&Array.isArray(c.ids)&&!excluded.has(c.key)&&c.ids.every(id=>!blocked.has(id)&&pieceById(id)&&pieceById(id).available!==false));
     const fresh=valid.filter(c=>!usedKeys.has(c.key)),pool=fresh.length?fresh:valid;
-    const different=pool.filter(c=>core(c.ids)!==oldCore),options=different.length?different:pool;
+    const different=pool.filter(c=>core(c.ids)!==oldCore),options=selectedIds.length?pool:(different.length?different:pool);
+    const keep=new Set((day.ids||[]).filter(id=>!blocked.has(id))),selectedGroups=new Set(selectedIds.map(id=>pieceById(id)?.group).filter(Boolean));
     let chosen=null,best=-Infinity;
-    for(const c of options){let score=(Number(c.score)||0)-Math.max(0,c.ids.length-2);for(const id of c.ids)score-=(used.get(id)||0)*8;if(score>best){best=score;chosen=c}}
+    for(const c of options){let score=(Number(c.score)||0)-Math.max(0,c.ids.length-2);for(const id of c.ids)score-=(used.get(id)||0)*8;
+      if(selectedIds.length){
+        // The other pieces are preferences, never hard locks. A better coordinated look may change them.
+        score+=9*c.ids.filter(id=>keep.has(id)).length;
+        score+=12*c.ids.filter(id=>selectedGroups.has(pieceById(id)?.group)).length;
+      }
+      if(score>best){best=score;chosen=c}}
     return chosen;
   }
-  function replaceWeekLook(date,expectedKey){
+  function replaceWeekLook(date,expectedKey,selectedIds=[]){
+    if(!cloud.canEnter())return false;
+    const plan=state.settings.weekPlan,day=plan?.days?.find(d=>d.date===date);
+    if(!day||date<localISO(new Date())||weekLookWorn(day)||(day.key||'')!==expectedKey){notify('O planejamento mudou. Abra a sugestão novamente.');return false}
+    const requested=[...new Set(Array.isArray(selectedIds)?selectedIds:[])].filter(id=>(day.ids||[]).includes(id));
+    if(selectedIds.length&&!requested.length)return false;
+    const skipped=[...new Set([...(Array.isArray(day.skippedKeys)?day.skippedKeys:[]),day.key||lookKey(day.ids||[])].filter(Boolean))];
+    const blocked=[...new Set([...(Array.isArray(day.skippedPieceIds)?day.skippedPieceIds:[]),...requested])];
+    const keep=requested.length?(day.ids||[]).filter(id=>!blocked.includes(id)):[];
+    const otherDays=plan.days.filter(d=>d!==day);
+    try{
+      const choices=generateCandidates({occasion:day.occasion,weather:day.weather,rain:day.rain??null,pool:120,excludeKeys:skipped,excludeIds:blocked,preferIds:keep,preferGroups:requested.map(id=>pieceById(id)?.group).filter(Boolean)});
+      const chosen=weekReplacementChoice(choices,{...day,skippedKeys:skipped},otherDays,requested,blocked);
+      // A failed request must not persist extra exclusions or remove the currently planned look.
+      const next={...day,replacementUnavailable:!chosen};
+      if(chosen){next.ids=chosen.ids.slice();next.key=chosen.key;next.skippedKeys=skipped;next.skippedPieceIds=blocked}
+      state.settings.weekPlan={...plan,days:plan.days.map(d=>d===day?next:d)};saveLocal();renderWeek();
+      if(chosen){const dlg=$('weekReplaceDialog');if(dlg?.open)dlg.close();const button=Array.from($('weekGrid')?.querySelectorAll('[data-week-replace]')||[]).find(b=>b.dataset.weekReplace===date);if(button)button.focus({preventScroll:true})}
+      if(chosen&&requested.length){const removedOptional=requested.some(id=>{const group=pieceById(id)?.group;return ['shoes','layer','accessory'].includes(group)&&!chosen.ids.some(newId=>pieceById(newId)?.group===group)});notify(removedOptional?'Novo look sem as peças selecionadas. Uma categoria opcional ficou de fora.':'Novo look sem as peças selecionadas. Os demais dias continuam iguais.')}
+      else notify(chosen?'Novo look para este dia. Os demais continuam iguais.':'Não encontramos outra combinação com essas escolhas. O look anterior foi mantido.');
+      return !!chosen;
+    }catch(err){notify('Não foi possível trocar o look. Seu planejamento foi mantido.');return false}
+  }
+  function openWeekReplace(date,expectedKey){
     if(!cloud.canEnter())return;
     const plan=state.settings.weekPlan,day=plan?.days?.find(d=>d.date===date);
     if(!day||date<localISO(new Date())||weekLookWorn(day)||(day.key||'')!==expectedKey)return;
-    const skipped=[...new Set([...(Array.isArray(day.skippedKeys)?day.skippedKeys:[]),day.key||lookKey(day.ids||[])].filter(Boolean))];
-    const otherDays=plan.days.filter(d=>d!==day);
-    try{
-      // Exclude declined looks before the generator truncates its ranked result pool.
-      const choices=generateCandidates({occasion:day.occasion,weather:day.weather,rain:day.rain??null,pool:120,excludeKeys:skipped});
-      const chosen=weekReplacementChoice(choices,{...day,skippedKeys:skipped},otherDays);
-      const next={...day,skippedKeys:skipped,replacementUnavailable:!chosen};
-      if(chosen){next.ids=chosen.ids.slice();next.key=chosen.key}
-      state.settings.weekPlan={...plan,days:plan.days.map(d=>d===day?next:d)};saveLocal();renderWeek();
-      // Keep keyboard and assistive-technology focus on the same day without scrolling.
-      const button=Array.from($('weekGrid')?.querySelectorAll('[data-week-replace]')||[]).find(b=>b.dataset.weekReplace===date);if(button)button.focus({preventScroll:true});
-      notify(chosen?'Novo look para este dia. Os demais continuam iguais.':'Sem outra combinação disponível para este dia. O look anterior foi mantido.');
-    }catch(err){notify('Não foi possível trocar o look. Seu planejamento foi mantido.')}
+    const items=(day.ids||[]).map(pieceById).filter(Boolean);
+    if(!items.length){replaceWeekLook(date,expectedKey,[]);return}
+    const dlg=$('weekReplaceDialog'),grid=$('weekReplacePieces'),apply=$('weekReplaceSelected'),status=$('weekReplaceStatus'),whole=$('weekReplaceWhole');
+    if(dlg.open)return;
+    const selected=new Set();
+    grid.replaceChildren();status.textContent='Selecione uma ou mais peças.';
+    function update(){apply.disabled=!selected.size;apply.textContent=selected.size?'Trocar '+selected.size+(selected.size===1?' peça selecionada':' peças selecionadas'):'Trocar peças selecionadas';status.textContent=selected.size?selected.size+(selected.size===1?' peça selecionada.':' peças selecionadas.'):'Selecione uma ou mais peças.'}
+    for(const p of items){
+      const label=document.createElement('label');label.className='week-replace-piece';
+      const input=document.createElement('input');input.type='checkbox';input.value=p.id;input.addEventListener('change',()=>{if(input.checked)selected.add(p.id);else selected.delete(p.id);label.classList.toggle('selected',input.checked);update()});
+      const photo=document.createElement('img');photo.src=p.image||'';photo.alt='';photo.loading='lazy';
+      const name=document.createElement('span');name.textContent=p.name||'Peça';
+      label.append(input,photo,name);grid.append(label);
+    }
+    function run(ids){apply.disabled=true;whole.disabled=true;status.textContent='Buscando uma nova combinação…';const ok=replaceWeekLook(date,expectedKey,ids);if(!ok){update();status.textContent='Nenhuma nova combinação encontrada. O look foi mantido; selecione outras peças ou tente trocar o look inteiro.';}whole.disabled=false}
+    apply.onclick=()=>{if(selected.size)run([...selected])};whole.onclick=()=>run([]);$('weekReplaceCancel').onclick=()=>dlg.close();update();dlg.showModal();
   }
   function renderWeek(){const root=$('weekGrid');if(!root)return;const plan=state.settings.weekPlan;const hint=$('weekHint');if($('weekdayOccasion')){$('weekdayOccasion').value=state.settings.weekdayOccasion||'trabalho';$('weekendOccasion').value=state.settings.weekendOccasion||'casual'}
     if(!plan?.days?.length){root.innerHTML='<div class="empty-state"><div class="empty-symbol">▤</div><h3>Sua semana começa aqui.</h3><p>Cadastre algumas peças e toque em “Planejar 7 dias” para receber sugestões de looks de hoje até os próximos seis dias.</p></div>';hint.textContent='O planejamento usa previsão se já tiver sido consultada em Início. Caso contrário, utiliza o clima selecionado em Criar looks.';return}
@@ -316,6 +348,7 @@
   }
 
   function setupEvents(){
+    document.body.insertAdjacentHTML('beforeend','<dialog id="weekReplaceDialog" class="v3dialog week-replace-dialog" aria-labelledby="weekReplaceTitle"><div class="eyebrow">VESTE / PLANEJAR</div><h2 id="weekReplaceTitle">O que você quer trocar?</h2><p>Marque as peças que não gostou. O VESTE tenta aproveitar as outras, mas pode ajustá-las para combinar melhor.</p><div id="weekReplacePieces" class="week-replace-grid" role="group" aria-label="Peças para trocar"></div><p id="weekReplaceStatus" class="note" role="status" aria-live="polite"></p><div class="week-replace-dialog-actions"><button type="button" class="btn btn-dark" id="weekReplaceSelected" disabled>Trocar peças selecionadas</button><button type="button" class="btn btn-outline" id="weekReplaceWhole">Trocar o look inteiro</button><button type="button" class="text-button" id="weekReplaceCancel">Cancelar</button></div></dialog>');
     const notice=document.createElement('div');notice.id='vesteDemoNotice';notice.className='veste-demo-notice';$('closetSummary').insertAdjacentElement('beforebegin',notice);
     document.addEventListener('click',e=>{
     const route=e.target.closest('[data-route]');if(route){navigate(route.dataset.route);return}
@@ -327,7 +360,7 @@
     const fav=e.target.closest('[data-favorite]');if(fav){toggleFavorite(fav.dataset.favorite);return}
     const unfav=e.target.closest('[data-unfavorite]');if(unfav){state.settings.favorites=state.settings.favorites.filter(f=>f.key!==unfav.dataset.unfavorite);saveLocal();renderAll();renderStyle();return}
     const worn=e.target.closest('[data-wear]');if(worn){wearLook(worn.dataset.wear);return}
-    const weekReplace=e.target.closest('[data-week-replace]');if(weekReplace){replaceWeekLook(weekReplace.dataset.weekReplace,weekReplace.dataset.weekKey||'');return}
+    const weekReplace=e.target.closest('[data-week-replace]');if(weekReplace){openWeekReplace(weekReplace.dataset.weekReplace,weekReplace.dataset.weekKey||'');return}
     const weekWear=e.target.closest('[data-week-wear]');if(weekWear){const day=state.settings.weekPlan?.days?.find(d=>d.date===weekWear.dataset.weekWear);if(day&&localISO(new Date())>=day.date)markWorn(day.ids,day.key,day.date);return}
     const avoidRemove=e.target.closest('[data-remove-avoid]');if(avoidRemove){state.settings.avoidPairs=(state.settings.avoidPairs||[]).filter(p=>p!==avoidRemove.dataset.removeAvoid);saveLocal();renderAdvanced();return}
     const todayToLooks=e.target.closest('[data-today-go]');if(todayToLooks){$('weather').value=todayWeatherContext();navigate('looks');generateLooks();return}
@@ -554,13 +587,14 @@
   generateCandidates=function(ctx){
     const m=intelligence();activeIntelligence=m;try{
     const excluded=new Set(Array.isArray(ctx.excludeKeys)?ctx.excludeKeys:[]);
+    const excludedIds=new Set(Array.isArray(ctx.excludeIds)?ctx.excludeIds:[]),preferred=new Set(Array.isArray(ctx.preferIds)?ctx.preferIds:[]),preferredGroups=new Set(Array.isArray(ctx.preferGroups)?ctx.preferGroups:[]);
     const required=Array.isArray(ctx.required)?ctx.required:[];
-    if(required.some(id=>!pieceById(id)||pieceById(id).available===false))return [];
+    if(required.some(id=>excludedIds.has(id)||!pieceById(id)||pieceById(id).available===false))return [];
     const lockedBy={};for(const id of required){const p=pieceById(id),s=slot[p.group];if(lockedBy[s]&&lockedBy[s]!==id)return [];lockedBy[s]=id}
     if(lockedBy.top&&pieceById(lockedBy.top)?.group==="onepiece"&&lockedBy.bottom)return [];
-    const avail=state.pieces.filter(p=>p.available!==false),by={};for(const p of avail)(by[p.group]||(by[p.group]=[])).push(p);
-    const rankCache=new Map();const rank=(a,base)=>{const k=(a[0]?.group||'empty')+'|'+(base?.color||'');if(!rankCache.has(k))rankCache.set(k,a.slice().sort((x,y)=>intelRank(y,ctx,m)-intelRank(x,ctx,m)+(base?12*(scoreColors(y.color,base.color)-scoreColors(x.color,base.color)):0)).slice(0,4));return rankCache.get(k)};
-    const ordered=g=>(by[g]||[]).slice().sort((a,b)=>intelRank(b,ctx,m)-intelRank(a,ctx,m)).slice(0,32);const tops=lockedBy.top?[pieceById(lockedBy.top)]:ordered("top");
+    const avail=state.pieces.filter(p=>p.available!==false&&!excludedIds.has(p.id)),by={};for(const p of avail)(by[p.group]||(by[p.group]=[])).push(p);
+    const preferredRank=p=>intelRank(p,ctx,m)+(preferred.has(p.id)?9:0);const rankCache=new Map();const rank=(a,base)=>{const k=(a[0]?.group||'empty')+'|'+(base?.color||'');if(!rankCache.has(k))rankCache.set(k,a.slice().sort((x,y)=>preferredRank(y)-preferredRank(x)+(base?12*(scoreColors(y.color,base.color)-scoreColors(x.color,base.color)):0)).slice(0,4));return rankCache.get(k)};
+    const ordered=g=>(by[g]||[]).slice().sort((a,b)=>preferredRank(b)-preferredRank(a)).slice(0,32);const tops=lockedBy.top?[pieceById(lockedBy.top)]:ordered("top");
     const bottoms=lockedBy.bottom?[pieceById(lockedBy.bottom)]:ordered("bottom");
     const bases=[];for(const t of tops){if(t.group==="onepiece")continue;for(const b of bottoms)bases.push([t,b])}
     if(!lockedBy.bottom){const ones=lockedBy.top?(pieceById(lockedBy.top)?.group==="onepiece"?[pieceById(lockedBy.top)]:[]):(by.onepiece||[]).slice(0,40);for(const o of ones)bases.push([o,null])}
@@ -573,7 +607,8 @@
         const c=makeCandidate(o,ctx,required);if(c&&by.shoes?.length&&!c.shoes)c.score-=18;if(c&&!excluded.has(c.key)&&!seen.has(c.key)){seen.add(c.key);results.push(c)}
       }
     }
-    results.sort((a,b)=>b.score-a.score);
+    const priority=c=>c.score+9*c.ids.filter(id=>preferred.has(id)).length+12*c.ids.filter(id=>preferredGroups.has(pieceById(id)?.group)).length;
+    results.sort((a,b)=>priority(b)-priority(a));
     if(ctx.pool)return results.slice(0,Math.min(120,ctx.pool));
     const chosen=[],used=new Set();
     while(chosen.length<8&&results.length){let best=null,bs=-Infinity;
