@@ -1672,7 +1672,7 @@
     remoteState="loading";remoteError="";render();
     try{
       const c=await cloud.catalogClient(),rows=[];let from=0;
-      while(from<3000){
+      while(true){
         const {data:page,error}=await c.from("veste_catalog_products").select("id,name,description,affiliate_url,image_url,price,rrp_price,currency,group_key,merchant_category,brand,shop,color,audience,sizes,source_updated_at,in_stock,is_for_sale").eq("in_stock",true).eq("is_for_sale",true).order("id",{ascending:true}).range(from,from+999);
         if(error)throw error;
         rows.push(...(page||[]));if(!page||page.length<1000)break;from+=1000;
