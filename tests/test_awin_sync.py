@@ -7,6 +7,15 @@ def item(**kwargs):
     return dict(product_name="Tênis Asics Azul",merchant_product_id="123-37",merchant_deep_link="https://www.lauriesporte.com.br/tenis-asics-azul/p?sku=37",aw_deep_link="https://www.awin1.com/pclick.php?p=1&a=2&m=118977",search_price="199,90",currency="BRL",in_stock="1",is_for_sale="1",size="37",**kwargs)
 
 class TestFeed(unittest.TestCase):
+    def test_cea_feed_and_sizes(self):
+        meta=b"Merchant ID,Data Feed ID,Membership Status,Format\n17648,91942,active,Awin\n17648,58627,active,Awin\n"
+        self.assertEqual(a.select_feeds(meta,{17648})[17648]["data_feed_id"],"58627")
+        product=dict(item(),merchant_deep_link="https://www.cea.com.br/tenis/p?sku=37")
+        other=dict(product,merchant_product_id="123-38",size="38",merchant_deep_link="https://www.cea.com.br/tenis/p?sku=38")
+        products,total,expected=a.cea_snapshot([product,other,dict(other,in_stock="0"),dict(other,product_name="Panela")],"C&A","2026-11-16")
+        self.assertEqual((total,expected,len(products)),(4,2,1))
+        self.assertEqual(products[0]["sizes"],["37","38"])
+
     def test_lauri_identity(self):
         x=a.normalize(item(),118977,"Lauri","2026-11-15T14:00:00+00:00")
         self.assertEqual(x["id"],"awin:118977:tenis-asics-azul")

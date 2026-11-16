@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Scheduled, server-only Awin ingestion. Standard library; never logs secrets."""
+import hashlib, tempfile
 import csv, gzip, io, json, os, re, sys, unicodedata, urllib.request, urllib.parse, urllib.error
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -46,24 +47,42 @@ class SyncIssue(Exception):
 def field_key(key):
     return re.sub(r"[^a-z0-9]+","_",norm(key)).strip("_")
 
-def rows(data):
+def csv_rows(stream):
     try:
-        sample=data.decode("utf-8-sig",errors="strict")
-        header=sample.splitlines()[0] if sample else ""
-        # Identify delimiter on the header alone, not a truncated sample containing
-        # quoted multiline product descriptions (Sniffer can fail on such files).
-        delimiters=[(",",len(next(csv.reader([header],delimiter=",")))),(";",len(next(csv.reader([header],delimiter=";")))),("\t",len(next(csv.reader([header],delimiter="\t"))))]
-        delim,width=max(delimiters,key=lambda x:x[1])
-        if width<2: raise SyncIssue("csv_header_not_recognized")
-        reader=csv.DictReader(io.StringIO(sample,newline=""),delimiter=delim,strict=True)
-        keys=[field_key(x) for x in reader.fieldnames or []]
-        if not all(keys) or len(set(keys))!=len(keys): raise SyncIssue("csv_duplicate_or_empty_columns")
-        result=[]
-        for row in reader:
+        header = stream.readline()
+        if not header:
+            return
+        delimiter = max(",;\t", key=lambda d: len(next(csv.reader([header], delimiter=d))))
+        keys = [field_key(k) for k in next(csv.reader([header], delimiter=delimiter))]
+        if len(keys) < 2: raise SyncIssue("csv_header_not_recognized")
+        if not all(keys) or len(set(keys)) != len(keys): raise SyncIssue("csv_duplicate_or_empty_columns")
+        for row in csv.DictReader(stream, fieldnames=keys, delimiter=delimiter, strict=True):
             if None in row or any(v is None for v in row.values()): raise SyncIssue("csv_incomplete_row")
-            result.append({field_key(k):v for k,v in row.items()})
-        return result
-    except (UnicodeDecodeError,csv.Error): raise SyncIssue("csv_invalid_encoding_or_quoting") from None
+            yield row
+    except (UnicodeDecodeError, csv.Error):
+        raise SyncIssue("csv_invalid_encoding_or_quoting") from None
+
+def rows(data):
+    with io.TextIOWrapper(io.BytesIO(data), encoding="utf-8-sig", newline="") as stream:
+        return list(csv_rows(stream))
+
+def large_feed_rows(url):
+    hosts = {"productdata.awin.com","ui.awin.com"}
+    if not https(url, hosts): raise SyncIssue("feed_invalid_download_url")
+    try:
+        with urllib.request.urlopen(url, timeout=120) as response, tempfile.TemporaryFile() as downloaded:
+            if not https(response.geturl(), hosts): raise SyncIssue("feed_invalid_download_url")
+            for chunk in iter(lambda: response.read(1024*1024), b""):
+                downloaded.write(chunk)
+                if downloaded.tell() > 512*1024*1024: raise SyncIssue("feed_too_large")
+            downloaded.seek(0)
+            compressed = downloaded.read(2) == b"\x1f\x8b"
+            downloaded.seek(0)
+            source = gzip.GzipFile(fileobj=downloaded) if compressed else downloaded
+            with io.TextIOWrapper(source, encoding="utf-8-sig", newline="") as stream:
+                yield from csv_rows(stream)
+    except (OSError, EOFError):
+        raise SyncIssue("product_feed_download_failed") from None
 
 def request_stage(url,code):
     try: return get(url)
@@ -89,7 +108,9 @@ def select_feeds(data,allowed,confirmed=None):
         format_set.add(fmt if fmt in ("awin","legacy","standard","google","enhanced","") else "other")
         if status not in ("active","joined","approved","yes") and not (confirmed and int(merchant) in confirmed and status not in ("suspended","rejected","inactive","pending")): continue
         if fmt not in ("awin","legacy","standard",""): continue
-        if int(merchant)==17652 and text(pick_field(r,"datafeed_id","data_feed_id","feed_id"))!="93360": continue
+        feed_id = pick_field(r,"datafeed_id","data_feed_id","feed_id")
+        preferred_id = {17652:"93360", 17648:"58627"}.get(int(merchant))
+        if preferred_id and feed_id != preferred_id: continue
         language=norm(pick_field(r,"language","feed_language"))
         region=norm(pick_field(r,"primary_region","region"))
         candidates.setdefault(int(merchant),[]).append((r,language,region))
@@ -104,14 +125,45 @@ def select_feeds(data,allowed,confirmed=None):
 
 GROUPS=[("onepiece",r"\b(vestido|macacao|macaquinho|dress)\b"),("shoes",r"\b(tenis|sapato|bota|coturno|mocassim|sandalia|chinelo|sapatilha|chuteira|sneaker)\b"),("accessory",r"\b(bolsa|mochila|cinto|bone|oculos|colar|brinco|relogio|meia|viseira)\b"),("layer",r"\b(jaqueta|blazer|casaco|colete|cardigan|parka|sobretudo)\b"),("bottom",r"\b(calca|shorts?|bermuda|saia|legging|jogger)\b"),("top",r"\b(camisa|camiseta|regata|blusa|polo|moletom|cropped|sueter|top)\b")]
 COLORS={"azul marinho":"marinho","azul-marinho":"marinho","marinho":"marinho","off white":"offwhite","off-white":"offwhite","offwhite":"offwhite","verde oliva":"oliva","oliva":"oliva","preto":"preto","preta":"preto","branco":"branco","branca":"branco","cinza":"cinza","bege":"bege","caramelo":"caramelo","marrom":"marrom","azul":"azul","verde":"verde","vermelho":"vermelho","vermelha":"vermelho","rosa":"rosa","vinho":"vinho","amarelo":"amarelo","amarela":"amarelo","roxo":"roxo","roxa":"roxo","laranja":"laranja","jeans":"jeans"}
+def stock_flags(row):
+    stock = norm(pick_field(row,"in_stock","availability","stock_status"))
+    sale = norm(pick_field(row,"is_for_sale"))
+    available=stock in ("1","true","yes","y","sim","in stock","in_stock","available","disponivel","instock")
+    on_sale=sale not in ("0","false","no","n","nao")
+    return available, on_sale
+
+def product_group(name,category):
+    return next((k for k,rx in GROUPS if re.search(rx,norm(name))),None) or next((k for k,rx in GROUPS if re.search(rx,norm(category))),None)
+
+def cea_snapshot(raw_rows, shop, stamp):
+    # The department-store feed includes non-fashion categories and unavailable inventory.
+    # Count all eligible rows before validating identity and affiliate links.
+    eligible = []
+    expected = total = 0
+    for row in raw_rows:
+        total += 1
+        if not all(stock_flags(row)):
+            continue
+        name = text(pick_field(row,"product_name","title","name"))
+        category = text(pick_field(row,"merchant_category","product_type","category_name"),300)
+        if product_group(name,category):
+            expected += 1
+            eligible.append(normalize(row,17648,shop,stamp))
+    return combine(eligible), total, expected
+
 def normalize(r,merchant,shop,stamp):
     def pick(*keys): return pick_field(r,*keys)
     name=text(pick("product_name","title","name"))
     category=text(pick("merchant_category","product_type","category_name"),300)
-    group=next((k for k,rx in GROUPS if re.search(rx,norm(name))),None) or next((k for k,rx in GROUPS if re.search(rx,norm(category))),None)
+    group=product_group(name,category)
     variant=text(pick("merchant_product_id","id"),180)
     base=text(pick("item_group_id","parent_product_id","product_group_id") or variant,180)
     merchant_url=https(pick("merchant_deep_link","merchant_url","product_url"))
+    if merchant == 17648:
+        page = urllib.parse.urlsplit(merchant_url)
+        path = page.path.rstrip("/")
+        if page.hostname and path and path != "/p":
+            base = "page-" + hashlib.sha256((page.hostname + path).encode()).hexdigest()
     if merchant==118977:
         slug=re.fullmatch(r"/([a-z0-9-]+)/p/?",urllib.parse.urlsplit(merchant_url).path)
         if slug and urllib.parse.urlsplit(merchant_url).hostname in {"www.lauriesporte.com.br","lauriesporte.com.br"}: base=slug.group(1)
@@ -128,10 +180,7 @@ def normalize(r,merchant,shop,stamp):
     raw_price=pick("search_price","store_price","price")
     if " BRL" in str(raw_price): cur="BRL"
     price=amount(raw_price) if cur in ("BRL","R$") else None
-    stock=norm(pick("in_stock","availability","stock_status")); sale=norm(pick("is_for_sale"))
-    # Unknown stock is not promoted as available.
-    available=stock in ("1","true","yes","y","sim","in stock","in_stock","available","disponivel","instock")
-    on_sale=sale not in ("0","false","no","n","nao")
+    available, on_sale = stock_flags(r)
     size=text(pick("size","size_name","product_size"),40)
     return dict(id=f"awin:{merchant}:{base}",source="awin",merchant_id=merchant,merchant_product_id=base,awin_product_id=text(pick("aw_product_id"),100),name=name,description=text(pick("description","product_short_description"),1000),affiliate_url=link,merchant_url=merchant_url,image_url=https(pick("aw_image_url","merchant_image_url","image_link")),price=price,rrp_price=amount(pick("rrp_price","rrp")) if cur in ("BRL","R$") else None,currency="BRL" if cur in ("BRL","R$") else cur,group_key=group,merchant_category=category,category_name=text(pick("category_name"),180),brand=text(pick("brand_name","brand"),80),shop=shop,color=color,raw_colour=raw,audience=audience,sizes=[size] if size else [],in_stock=available,is_for_sale=on_sale,variant_count=1,source_updated_at=stamp,synced_at=datetime.now(timezone.utc).isoformat())
 def combine(items):
@@ -183,17 +232,25 @@ def sync_catalog():
             if parsed_stamp.tzinfo is None: parsed_stamp=parsed_stamp.replace(tzinfo=timezone.utc)
             stamp=parsed_stamp.isoformat()
         except ValueError: raise SyncIssue("feed_invalid_source_timestamp") from None
-        parsed=rows(request_stage(feed,"product_feed"))
-        if not parsed: raise SyncIssue("product_feed_empty")
-        products=combine(normalize(x,mid,text(pick_field(r,"advertiser_name","merchant_name"),80),stamp) for x in parsed)
+        shop = text(pick_field(r,"advertiser_name","merchant_name"),80)
+        if mid == 17648:
+            products, raw_count, expected = cea_snapshot(large_feed_rows(feed), shop, stamp)
+            listed = pick_field(r,"no_of_products","number_of_products","product_count","products")
+            if str(listed).isdigit() and raw_count < int(listed)*.95:
+                raise SyncIssue("cea_feed_incomplete")
+        else:
+            parsed = rows(request_stage(feed,"product_feed"))
+            raw_count = expected = len(parsed)
+            products = combine(normalize(x,mid,shop,stamp) for x in parsed)
+        if not raw_count: raise SyncIssue("product_feed_empty")
         available=sum(p["in_stock"] and p["is_for_sale"] for p in products)
         variants=sum(p["variant_count"] for p in products)
-        print(f"catalog merchant={mid} rows={len(parsed)} accepted_variants={variants} products={len(products)} available={available}",flush=True)
+        print(f"catalog merchant={mid} rows={raw_count} scoped_rows={expected} accepted_variants={variants} products={len(products)} available={available}",flush=True)
         if not products: raise SyncIssue("product_feed_no_supported_rows")
         if not available: raise SyncIssue("product_feed_no_available_rows")
-        if variants < len(parsed)*.7: raise SyncIssue("product_feed_coverage_below_70_percent")
+        if variants < expected*.7: raise SyncIssue("product_feed_coverage_below_70_percent")
         # Keep the existing atomic database coverage, identity and staleness guards.
-        try: db("rpc/veste_catalog_snapshot_import",{"merchant":mid,"records":products,"expected_rows":len(parsed)})
+        try: db("rpc/veste_catalog_snapshot_import",{"merchant":mid,"records":products,"expected_rows":expected})
         except urllib.error.HTTPError as e:
             # Only known database exception phrases are permitted; never log response bodies.
             try: reason=json.loads(e.read().decode()).get("message","")
