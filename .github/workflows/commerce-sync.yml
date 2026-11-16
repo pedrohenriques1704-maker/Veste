@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/awin_sync.py'
+      - 'supabase/migrations/*catalog_snapshot*.sql'
       - '.github/workflows/commerce-sync.yml'
   schedule:
     - cron: '15 8 * * *'
