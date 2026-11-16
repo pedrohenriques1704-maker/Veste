@@ -186,3 +186,9 @@
 
 /* Shared visual replacement dialog: honor explicitly pinned pieces on Looks. */
 .week-replace-piece.locked{cursor:default;opacity:.72}.week-replace-piece.locked input{cursor:default}.week-replace-dialog-actions .text-button[hidden]{display:none!important}#looksGrid .look-actions [data-reject]{white-space:normal;line-height:1.3;min-height:44px}
+
+/* Wardrobe care: time-based laundry management. */
+.laundry-overview{margin:12px 0 18px;padding:16px}.laundry-overview[hidden]{display:none!important}.laundry-overview>summary{cursor:pointer;font-weight:750;color:var(--ink)}.laundry-overview>p{margin:10px 0 0}
+.laundry-row{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}.laundry-row:last-child{border-bottom:0}.laundry-row img{width:62px;height:76px;object-fit:contain;background:var(--bg);border-radius:8px}.laundry-row>div{flex:1;min-width:0}.laundry-row strong,.laundry-row small{display:block;overflow-wrap:anywhere}.laundry-row small{font-size:12px;margin:4px 0;color:var(--muted)}.laundry-row-actions{display:flex;gap:8px 14px;flex-wrap:wrap}
+.laundry-warning{color:#8d4a33!important;border-left:2px solid var(--accent);padding:7px 9px;background:var(--soft);border-radius:5px}
+.laundry-preferences{margin:20px 0}.laundry-preferences label,.laundry-duration{display:grid;gap:6px;font-size:13px;font-weight:650;margin:12px 0}.laundry-preferences input,.laundry-duration input{width:min(140px,100%);border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);padding:10px;font:inherit;font-size:16px}
