@@ -168,3 +168,6 @@
   #view-discover #discActionDock button:disabled{opacity:.44;cursor:default}
   #view-discover #discFeed:has(#discFilters :is(input:not([type=checkbox]),select):focus) #discActionDock{visibility:hidden;pointer-events:none}
 }
+
+/* Weekly planner — replace a single day's outfit without resetting the plan. */
+.week-look-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.week-look-actions .btn{flex:1 1 100%;min-width:0;white-space:normal;line-height:1.35;margin:0}.week-replace-btn{min-height:44px}.week-replace-note{font-size:12px!important;line-height:1.45;color:var(--muted,#817b74);margin:8px 0 0}.week-look-actions .btn:disabled{opacity:.5;cursor:default}
