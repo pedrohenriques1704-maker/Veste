@@ -53,6 +53,10 @@ class TestFeed(unittest.TestCase):
               b'118977,Lauri,active,Google,https://api.awin.com/x\n'
               b'118977,Lauri,pending,Awin,https://productdata.awin.com/x\n')
         self.assertEqual(a.select_feeds(data,{118977}),{})
+    def test_select_nike_current_feed(self):
+        meta=b"Merchant ID,Data Feed ID,Membership Status,Format\n17652,44669,active,Awin\n17652,93360,active,Awin\n"
+        self.assertEqual(a.select_feeds(meta,{17652})[17652]["data_feed_id"],"93360")
+
     def test_legacy_fallback_and_import(self):
         import csv,io
         meta=(b'Merchant ID,Merchant Name,Membership Status,Last Imported,URL\n'

@@ -89,6 +89,7 @@ def select_feeds(data,allowed,confirmed=None):
         format_set.add(fmt if fmt in ("awin","legacy","standard","google","enhanced","") else "other")
         if status not in ("active","joined","approved","yes") and not (confirmed and int(merchant) in confirmed and status not in ("suspended","rejected","inactive","pending")): continue
         if fmt not in ("awin","legacy","standard",""): continue
+        if int(merchant)==17652 and text(pick_field(r,"datafeed_id","data_feed_id","feed_id"))!="93360": continue
         language=norm(pick_field(r,"language","feed_language"))
         region=norm(pick_field(r,"primary_region","region"))
         candidates.setdefault(int(merchant),[]).append((r,language,region))
@@ -167,11 +168,11 @@ def sync_catalog():
     except Exception: print("programme membership check unavailable",flush=True)
     for stage,url in urls:
         try:
-            selected=select_feeds(request_stage(url,stage),allowed,confirmed)
+            selected.update(select_feeds(request_stage(url,stage),allowed-set(selected),confirmed))
             if set(selected)==allowed: break
             last_code=stage+"_no_approved_legacy"
         except SyncIssue as e: last_code=stage+"_"+e.code
-    if set(selected)!=allowed: raise SyncIssue(last_code+("_joined_feed_not_ready" if confirmed==allowed else "_membership_unconfirmed"))
+    if not selected: raise SyncIssue(last_code+("_joined_feed_not_ready" if confirmed==allowed else "_membership_unconfirmed"))
     total=0
     for mid,r in selected.items():
         feed=https(pick_field(r,"url","download_url","feed_url"),{"productdata.awin.com","ui.awin.com"})
@@ -200,7 +201,10 @@ def sync_catalog():
             codes={"Catalog identity/coverage mismatch":"db_identity_coverage_mismatch","Feed older than existing catalog":"db_feed_older","Incomplete or unsupported feed":"db_incomplete_feed","Invalid catalog batch":"db_invalid_batch","Invalid catalog row":"db_invalid_row"}
             raise SyncIssue(codes.get(reason,"db_import_http_"+str(e.code))) from None
         total+=len(products)
-    log("catalog",True,total,"Approved Awin legacy feeds imported; stock validated")
+    missing=sorted(allowed-set(selected))
+    if missing:
+        print("catalog pending merchants="+",".join(map(str,missing)),flush=True)
+    log("catalog",not missing,total,"Pending merchants: "+",".join(map(str,missing)) if missing else "Approved Awin legacy feeds imported; stock validated")
 def sync_transactions():
     pub=os.environ["AWIN_PUBLISHER_ID"]; token=os.environ["AWIN_API_TOKEN"]
     if not pub.isdigit() or not token: raise ValueError("Missing transaction config")
