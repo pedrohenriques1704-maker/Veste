@@ -158,3 +158,13 @@
 .support-ticket{border-top:1px solid var(--border,#ded5c9);padding:14px 0;overflow-wrap:anywhere}.support-ticket small{display:block;font-size:12px;opacity:.75;margin:6px 0}.support-ticket p{white-space:pre-wrap}
 .support-privacy{margin-top:15px}.support-legal-links{margin-top:16px}.support-legal-links a{color:inherit;text-decoration:underline}
 #supportStatus,#supportDeleteStatus{overflow-wrap:anywhere}
+
+/* Discovery: persistent voting dock above mobile navigation, including iOS safe area. */
+@media(max-width:810px){
+  #view-discover #discFeed{padding-bottom:var(--disc-dock-height,68px)}
+  #view-discover #discCard{scroll-margin-top:calc(12px + env(safe-area-inset-top,0px))}
+  #view-discover #discActionDock{position:fixed;z-index:19;left:0;right:0;bottom:var(--disc-nav-height,calc(60px + env(safe-area-inset-bottom,0px)));max-width:none;width:auto;box-sizing:border-box;margin:0;padding:10px max(18px,env(safe-area-inset-right,0px)) 10px max(18px,env(safe-area-inset-left,0px));display:grid;grid-template-columns:minmax(0,1fr) 48px minmax(0,1fr);gap:8px;background:var(--paper,#fffdfa);border-top:1px solid var(--line,#e7e0d7);box-shadow:0 -5px 20px rgba(44,37,28,.07)}
+  #view-discover #discActionDock .btn{margin:0;min-width:0;min-height:44px;padding:8px 5px;gap:4px;font-size:14px}
+  #view-discover #discActionDock button:disabled{opacity:.44;cursor:default}
+  #view-discover #discFeed:has(#discFilters :is(input:not([type=checkbox]),select):focus) #discActionDock{visibility:hidden;pointer-events:none}
+}
