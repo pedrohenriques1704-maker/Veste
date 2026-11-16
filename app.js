@@ -28,7 +28,7 @@
     settings:{prefs:['casual','elegante'],loved:[],rejected:[],favorites:[],wearHistory:[],preferAccessories:true,repeatDays:3,avoidPairs:[],weatherCity:'Rio de Janeiro',weekPlan:null,...readLocal()},
     candidates:[],resultsGenerated:false,forecast:null,aiKey:null,aiModel:'gemini-3.6-flash',aiNotes:{},weatherLoading:false
   };
-  const saveLocal = () => {try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state.settings));cloud.touch()}catch{notify('Não foi possível salvar as preferências neste navegador.')}};
+  const saveLocal = () => {try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state.settings));cloud.touch();return true}catch{notify('Não foi possível salvar as preferências neste navegador.');return false}};
   const escapeHTML = (s='') => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const randomId = () => globalThis.crypto?.randomUUID?.() || `g-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   let toastTimeout;
@@ -1683,13 +1683,22 @@
     }catch(e){support.diagnostic('catalog');remoteError=String(e?.message||e||"Falha ao carregar catálogo.").slice(0,160);remoteState="error"}
     render();
   }
+  function rejectedProductKey(p){
+    if(p?.source!=="catalog"||!p.name||!(p.shop||p.brand))return null;
+    return JSON.stringify([p.shop,p.brand,p.name,p.color,p.audience].map(value=>norm(value||"").trim()));
+  }
+  function seenProducts(votes){
+    const ids=new Set(votes.map(v=>v.id));
+    const rejected=new Set(votes.filter(v=>!v.liked).map(v=>rejectedProductKey(v.item)).filter(Boolean));
+    return p=>ids.has(p.id)||rejected.has(rejectedProductKey(p));
+  }
   function options(){
-    const d=data(),seen=new Set(d.votes.map(v=>v.id)),catalog=remoteCatalog.length?remoteCatalog:d.catalog.map(normalize).filter(Boolean),all=(source==="idea"||!catalog.length?seeds:catalog).filter(p=>!seen.has(p.id)&&matches(p,f,source)).filter(p=>{const a=shop.analyze(p,state.pieces);return (!f.avoidSimilar||!a.similar.length)&&(!f.gapsOnly||["missing","expand"].includes(a.gap))&&(!f.hasLooks||shop.looks(p,state.pieces).length>0)});
+    const d=data(),seen=seenProducts(d.votes),catalog=remoteCatalog.length?remoteCatalog:d.catalog.map(normalize).filter(Boolean),all=(source==="idea"||!catalog.length?seeds:catalog).filter(p=>!seen(p)&&matches(p,f,source)).filter(p=>{const a=shop.analyze(p,state.pieces);return (!f.avoidSimilar||!a.similar.length)&&(!f.gapsOnly||["missing","expand"].includes(a.gap))&&(!f.hasLooks||shop.looks(p,state.pieces).length>0)});
     if(source==="catalog"&&f.order==="cheap")return all.sort((a,b)=>(a.price??Infinity)-(b.price??Infinity));
     if(source==="catalog"&&f.order==="expensive")return all.sort((a,b)=>(b.price??-1)-(a.price??-1));
     const votes=d.votes.slice(-200).map(v=>({...v,item:stored(v.item)})).filter(v=>v.item),st=shop.stats(d),model=shoppingProfile();return all.map(p=>({p,n:f.order==="explore"?p.styles.reduce((n,k)=>n+1/(1+(st[k]?.likes||0)+(st[k]?.passes||0)),0)+ranked(p,votes)*.02:ranked(p,votes)*.35+(shop.purchaseValue(p,state.pieces,model,false).score??30)})).sort((a,b)=>b.n-a.n).map(x=>x.p);
   }
-  function alternatives(p){const analysis=shop.analyze(p,state.pieces);if(!analysis.similar.length)return "";const model=shoppingProfile(),pool=remoteCatalog.filter(q=>q.id!==p.id&&(q.audience===p.audience||q.audience==="unissex")&&q.group===p.group&&q.offerAvailable!==false&&!data().votes.some(v=>v.id===q.id));const sorted=pool.map(q=>({q,a:shop.purchaseValue(q,state.pieces,model,false)})).filter(x=>!x.a.similar.length&&x.a.compatible.length>0).sort((a,b)=>(b.a.score??0)-(a.a.score??0)).slice(0,3);return sorted.length?'<details class="disc-analysis"><summary>Alternativas para evitar repetição</summary><p>Peças da mesma categoria com menos semelhança no seu closet.</p><div class="disc-mini">'+sorted.map(({q})=>'<button type="button" class="btn btn-outline" data-disc-alternative="'+E(q.id)+'">'+(q.image?'<img loading="lazy" referrerpolicy="no-referrer" src="'+E(q.image)+'" alt="" style="width:100%;height:85px;object-fit:contain">':"")+'<span>'+E(q.name)+'</span></button>').join("")+'</div></details>':""}
+  function alternatives(p){const analysis=shop.analyze(p,state.pieces);if(!analysis.similar.length)return "";const model=shoppingProfile(),seen=seenProducts(data().votes),pool=remoteCatalog.filter(q=>q.id!==p.id&&(q.audience===p.audience||q.audience==="unissex")&&q.group===p.group&&q.offerAvailable!==false&&!seen(q));const sorted=pool.map(q=>({q,a:shop.purchaseValue(q,state.pieces,model,false)})).filter(x=>!x.a.similar.length&&x.a.compatible.length>0).sort((a,b)=>(b.a.score??0)-(a.a.score??0)).slice(0,3);return sorted.length?'<details class="disc-analysis"><summary>Alternativas para evitar repetição</summary><p>Peças da mesma categoria com menos semelhança no seu closet.</p><div class="disc-mini">'+sorted.map(({q})=>'<button type="button" class="btn btn-outline" data-disc-alternative="'+E(q.id)+'">'+(q.image?'<img loading="lazy" referrerpolicy="no-referrer" src="'+E(q.image)+'" alt="" style="width:100%;height:85px;object-fit:contain">':"")+'<span>'+E(q.name)+'</span></button>').join("")+'</div></details>':""}
   function tile(p,saved=false){
     const image=p.image?'<img class="disc-photo" src="'+E(p.image)+'" loading="lazy" referrerpolicy="no-referrer" alt="'+E(p.name)+'">':'<div class="disc-art" style="--swatch:'+(COLORS[p.color]?.hex||"#88786c")+'"><span>'+({top:"♧",bottom:"Ⅱ",layer:"◇",onepiece:"♢",shoes:"◒",accessory:"✦"}[p.group]||"✦")+'</span><small>'+(p.source==="idea"?"Inspiração · não é anúncio":"Foto indisponível")+'</small></div>';
     let link=p.source==="idea"?"https://www.google.com/search?tbm=shop&q="+encodeURIComponent([p.name,audienceLabel[p.audience],"Brasil"].filter(Boolean).join(" ")):p.url;
@@ -1718,7 +1727,7 @@
     }
   }
   function scrollToDiscoveryCard(){if(state.view!=="discover"||tab!=="feed"||!window.matchMedia("(max-width: 810px)").matches)return;const card=$("discCard");if(card)card.scrollIntoView({block:"start",behavior:"instant"})}
-  function vote(liked){if(!current||!cloud.canEnter())return;const d=data(),p=current;if(d.votes.length>=1000){notify("Remova avaliações antigas para continuar.");return}d.votes=d.votes.filter(v=>v.id!==p.id);d.votes.push({id:p.id,item:p,liked});if(liked)shop.seed(d,p);history.push(p.id);current=null;saveLocal();render();scrollToDiscoveryCard()}
+  function vote(liked){if(!current||!cloud.canEnter())return;const d=data(),p=current;if(d.votes.length>=1000){notify("Remova avaliações antigas para continuar.");return}const previousVotes=d.votes;d.votes=d.votes.filter(v=>v.id!==p.id);d.votes.push({id:p.id,item:p,liked});if(liked)shop.seed(d,p);if(!saveLocal()){d.votes=previousVotes;return}history.push(p.id);current=null;render();scrollToDiscoveryCard()}
   function undo(){const id=history.pop();if(!id)return;const d=data();d.votes=d.votes.filter(v=>v.id!==id);current=null;saveLocal();render();scrollToDiscoveryCard()}
   function csv(raw){
     const t=raw.replace(/^\uFEFF/,""),first=t.split(/\r?\n/,1)[0],sep=(first.match(/;/g)||[]).length>(first.match(/,/g)||[]).length?";":",";
