@@ -1,0 +1,67 @@
+name: Compare Nike feeds
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/compare-nike-feeds.yml']
+permissions:
+  contents: read
+jobs:
+  compare:
+    if: github.head_ref == 'analysis/nike-feeds-20261116' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare catalog IDs
+        env:
+          AWIN_PUBLISHER_ID: ${{ vars.AWIN_PUBLISHER_ID }}
+          AWIN_FEED_KEY: ${{ secrets.AWIN_FEED_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import quote
+          from scripts.awin_sync import request_stage, rows, pick_field, https, normalize, SyncIssue
+          
+          pub = os.environ["AWIN_PUBLISHER_ID"]
+          key = quote(os.environ["AWIN_FEED_KEY"], safe="")
+          urls = [f"https://ui.awin.com/productdata-darwin-download/publisher/{pub}/{key}/1/feedList",
+                  f"https://productdata.awin.com/datafeed/list/apikey/{key}"]
+          wanted = ["44669", "93360"]
+          feeds = {}
+          for url in urls:
+              try:
+                  listing = rows(request_stage(url, "listing"))
+              except SyncIssue:
+                  continue
+              for row in listing:
+                  fid = pick_field(row, "datafeed_id", "data_feed_id", "feed_id")
+                  if fid in wanted and pick_field(row, "advertiser_id", "merchant_id", "merchantid") == "17652":
+                      link = https(pick_field(row, "url", "download_url", "feed_url"), {"ui.awin.com", "productdata.awin.com"})
+                      if link:
+                          feeds.setdefault(fid, link)
+              if len(feeds) == 2:
+                  break
+          if len(feeds) != 2:
+              raise SystemExit("Could not locate both feeds")
+          
+          results = []
+          for fid in wanted:
+              data = rows(request_stage(feeds[fid], "catalog"))
+              sets = {k: set() for k in ("variant", "product", "available_product", "available_variant", "destination")}
+              for row in data:
+                  sku = pick_field(row, "merchant_product_id", "id").strip()
+                  parent = pick_field(row, "item_group_id", "parent_product_id", "product_group_id").strip() or sku
+                  if sku: sets["variant"].add(sku)
+                  if parent: sets["product"].add(parent)
+                  p = normalize(row, 17652, "Nike BR", "")
+                  if p and p["in_stock"] and p["is_for_sale"]:
+                      sets["available_product"].add(p["id"])
+                      if sku: sets["available_variant"].add(sku)
+                      dest = p["merchant_url"].split("?")[0].rstrip("/")
+                      if dest: sets["destination"].add(dest)
+              print("feed", fid, "rows", len(data), "missing SKU", sum(not pick_field(r,"merchant_product_id","id").strip() for r in data))
+              results.append(sets)
+          for k in results[0]:
+              a,b = (s[k] for s in results)
+              print(k, "2020", len(a), "2024",len(b), "shared",len(a&b),"only2020",len(a-b),"only2024",len(b-a))
+          PY
