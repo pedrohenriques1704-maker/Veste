@@ -892,7 +892,7 @@
   const validUid=id=>typeof id==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
   function defaults(input={}){
     const out={prefs:['casual','elegante'],loved:[],rejected:[],favorites:[],wearHistory:[],preferAccessories:true,repeatDays:3,avoidPairs:[],weatherCity:'Rio de Janeiro',weekPlan:null};
-    const allowed=['prefs','loved','rejected','favorites','wearHistory','preferAccessories','repeatDays','avoidPairs','weatherCity','weekPlan','weekdayOccasion','weekendOccasion','aiAutoAnalyze','v3','demoInitialized','discovery','laundryDays'];
+    const allowed=['prefs','loved','rejected','favorites','wearHistory','preferAccessories','repeatDays','avoidPairs','weatherCity','weekPlan','weekdayOccasion','weekendOccasion','aiAutoAnalyze','v3','demoInitialized','discovery','laundryDays','lookRotation'];
     for(const k of allowed)if(Object.hasOwn(input,k))out[k]=input[k];
     for(const k of ['prefs','loved','rejected','favorites','wearHistory','avoidPairs'])if(!Array.isArray(out[k]))out[k]=[];
     if(out.v3&&typeof out.v3!=='object')delete out.v3;
@@ -1628,7 +1628,16 @@
     const g=norm(r.audience||r.gender),audience=/^(male|men|masculino)$/.test(g)?"masculino":/^(female|women|feminino)$/.test(g)?"feminino":/^(unisex|unissex)$/.test(g)?"unissex":"";
     const currency=String(r.currency||r.currency_code||"BRL").toUpperCase();
     const color=own(COLORS,r.color)?r.color:Object.keys(COLORS).find(k=>norm(r.colour||r.color||name).includes(norm(k)))||"";
-    return {id:typeof r.id==="string"&&r.id.length<240?r.id:url,name,url,image:safeLink(r.image||r.image_url||r.aw_image_url||r.merchant_image_url||r.image_link),price:["BRL","R$"].includes(currency)?parsePrice(r.price??r.search_price??r.store_price):null,group,color,styles:[...new Set([...tags(r.styles||r.style,styleLabel),...Object.keys(styleRules).filter(k=>styleRules[k].test(desc))])],audience,sizes:array(r.sizes||r.size).map(x=>str(x,12).toUpperCase()).filter(Boolean).slice(0,25),occasion:tags(r.occasion||r.occasions,OCCASIONS),brand:str(r.brand||r.brand_name,80),shop:str(r.shop||r.merchant_name||r.advertiser_name,80),source:"catalog",updatedAt:str(r.source_updated_at||r.updatedAt,40),offerAvailable:r.offerAvailable===false||r.in_stock===false||r.is_for_sale===false?false:r.offerAvailable===true||r.in_stock===true&&r.is_for_sale===true?true:null};
+    const styles=[...new Set([...tags(r.styles||r.style,styleLabel),...Object.keys(styleRules).filter(k=>styleRules[k].test(desc))])];
+    const declaredOccasions=tags(r.occasion||r.occasions,OCCASIONS),occasion=new Set(declaredOccasions);
+    if(!occasion.size){
+      occasion.add("casual");
+      if(styles.some(k=>["elegante","social","classico","minimalista","preppy","oldmoney","workwear"].includes(k))||/\b(alfaiataria|social|blazer|mocassim|oxford|polo|camisa)\b/.test(desc))occasion.add("trabalho");
+      if(styles.some(k=>["esportivo","athleisure","outdoor"].includes(k))||/\b(treino|corrida|running|fitness|chuteira|legging)\b/.test(desc))occasion.add("esporte");
+      if(styles.some(k=>["noturno","glam","social","elegante"].includes(k))||/\b(festa|paete|cetim|scarpin)\b/.test(desc))occasion.add("evento");
+      if(styles.some(k=>["noturno","glam","gotico","alternativo","rock"].includes(k))||/\b(balada|noite|festa|paete)\b/.test(desc))occasion.add("noite");
+    }
+    return {id:typeof r.id==="string"&&r.id.length<240?r.id:url,name,url,image:safeLink(r.image||r.image_url||r.aw_image_url||r.merchant_image_url||r.image_link),price:["BRL","R$"].includes(currency)?parsePrice(r.price??r.search_price??r.store_price):null,group,color,styles,audience,sizes:array(r.sizes||r.size).map(x=>str(x,12).toUpperCase()).filter(Boolean).slice(0,25),occasion:[...occasion],brand:str(r.brand||r.brand_name,80),shop:str(r.shop||r.merchant_name||r.advertiser_name,80),source:"catalog",updatedAt:str(r.source_updated_at||r.updatedAt,40),offerAvailable:r.offerAvailable===false||r.in_stock===false||r.is_for_sale===false?false:r.offerAvailable===true||r.in_stock===true&&r.is_for_sale===true?true:null};
   }
   const seeds=[
    ["Polo de tricô","top","offwhite","elegante oldmoney classico preppy","masculino"],["Calça de alfaiataria reta","bottom","preto","elegante social classico minimalista","unissex"],["Camiseta oversized preta","top","preto","urbano alternativo rock skater","unissex"],["Coturno de plataforma","shoes","preto","gotico punk alternativo rock","unissex"],["Saia plissada xadrez","bottom","cinza","academia preppy grunge alternativo","feminino"],["Corpete de veludo preto","top","preto","gotico alternativo noturno","feminino"],["Camisa de flanela xadrez","layer","vermelho","grunge rock vintage","unissex"],["Jaqueta de couro com tachas","layer","preto","punk rock alternativo","unissex"],["Calça cargo utilitária","bottom","oliva","techwear workwear urbano outdoor","unissex"],["Blusa de renda manga longa","top","preto","gotico romantico noturno","feminino"],["Tênis de corrida","shoes","branco","esportivo athleisure","unissex"],["Legging de treino","bottom","preto","esportivo athleisure","feminino"],["Moletom amplo","top","cinza","athleisure casual skater normcore","unissex"],["Camisa de linho","top","bege","praia oldmoney elegante casual","unissex"],["Vestido floral midi","onepiece","rosa","romantico boho modesto","feminino"],["Bolsa de crochê","accessory","bege","boho praia vintage","feminino"],["Calça jeans flare","bottom","jeans","vintage boho y2k","feminino"],["Óculos anos 2000","accessory","preto","y2k vintage urbano","unissex"],["Camisa oxford azul","top","azul","preppy classico social oldmoney","unissex"],["Blazer estruturado","layer","marinho","social elegante classico oldmoney","unissex"],["Jaqueta de sarja","layer","caramelo","workwear vintage casual","unissex"],["Parka impermeável","layer","preto","outdoor techwear esportivo","unissex"],["Suéter de losangos","top","marrom","academia preppy vintage","unissex"],["Sapatilha com laço","shoes","rosa","coquette romantico","feminino"],["Saia longa de linho","bottom","offwhite","modesto boho praia","feminino"],["Camisa color block","top","azul","criativo maximalista vintage","unissex"],["Bolsa metalizada","accessory","cinza","futurista glam noturno","feminino"],["Vestido de paetês","onepiece","vinho","glam noturno maximalista","feminino"],["Camiseta básica branca","top","branco","normcore minimalista casual","unissex"],["Tênis de skate","shoes","preto","skater urbano casual","unissex"],["Mocassim de couro","shoes","marrom","classico oldmoney academia","unissex"],["Colar de corrente","accessory","cinza","punk alternativo urbano","unissex"],["Bermuda de sarja","bottom","bege","casual praia normcore","masculino"],["Vestido preto longo","onepiece","preto","gotico noturno modesto","feminino"],["Jaqueta bomber","layer","oliva","urbano alternativo casual","unissex"],["Calça jogger","bottom","cinza","athleisure esportivo casual","unissex"],["Camiseta de banda","top","preto","rock grunge alternativo","unissex"],["Camisa de cetim","top","vinho","glam noturno elegante","unissex"],["Blusa com laço","top","offwhite","coquette romantico","feminino"],["Jaqueta metalizada","layer","cinza","futurista maximalista urbano","unissex"]
@@ -1692,7 +1701,7 @@
     if(f.styles.length&&!p.styles.some(x=>f.styles.includes(x)))return false;
     if(f.groups.length&&!f.groups.includes(p.group))return false;
     if(f.colors.length&&!f.colors.includes(p.color))return false;
-    if(f.audience&&p.audience!==f.audience&&p.audience!=="unissex")return false;
+    if(f.audience&&p.audience&&p.audience!==f.audience&&p.audience!=="unissex")return false;
     if(f.query&&!norm([p.name,p.brand,p.shop,...p.styles.map(k=>styleLabel[k])].join(" ")).includes(norm(f.query)))return false;
     if(mode==="catalog"){
       if(f.min!==""&&(p.price===null||p.price<Number(f.min)))return false;
@@ -1714,14 +1723,37 @@
     if(remoteState==="loading"||(!force&&remoteState==="ready"))return;
     remoteState="loading";remoteError="";render();
     try{
-      const c=await cloud.catalogClient(),rows=[];let from=0;
-      while(true){
-        const {data:page,error}=await c.from("veste_catalog_products").select("id,name,description,affiliate_url,image_url,price,rrp_price,currency,group_key,merchant_category,brand,shop,color,audience,sizes,source_updated_at,in_stock,is_for_sale").eq("in_stock",true).eq("is_for_sale",true).order("id",{ascending:true}).range(from,from+999);
-        if(error)throw error;
-        rows.push(...(page||[]));if(!page||page.length<1000)break;from+=1000;
+      const c=await cloud.catalogClient(),columns="id,name,description,affiliate_url,image_url,price,rrp_price,currency,group_key,merchant_category,brand,shop,color,audience,sizes,source_updated_at,in_stock,is_for_sale",sampleSize=300,maxWindows=3;
+      const filtered=query=>{
+        query=query.eq("in_stock",true).eq("is_for_sale",true);
+        if(f.groups.length)query=query.in("group_key",f.groups);
+        if(f.audience)query=query.in("audience",[f.audience,"unissex",""]);
+        if(f.min!=="")query=query.gte("price",Number(f.min));
+        if(f.max!=="")query=query.lte("price",Number(f.max));
+        if(f.size)query=query.contains("sizes",[f.size]);
+        const search=String(f.query||"").replace(/[^\p{L}\p{N} ]/gu," ").replace(/\s+/g," ").trim().slice(0,60);
+        const brand=String(f.brand||"").replace(/[^\p{L}\p{N} ]/gu," ").replace(/\s+/g," ").trim().slice(0,60);
+        if(search)query=query.or("name.ilike.%"+search+"%,description.ilike.%"+search+"%,brand.ilike.%"+search+"%,shop.ilike.%"+search+"%");
+        if(brand)query=query.or("brand.ilike.%"+brand+"%,shop.ilike.%"+brand+"%");
+        return query;
+      };
+      const counted=await filtered(c.from("veste_catalog_products").select("id",{count:"exact",head:true}));
+      if(counted.error)throw counted.error;
+      const total=Math.max(0,Number(counted.count)||0),starts=[];
+      if(total){
+        const span=Math.max(0,total-sampleSize);
+        starts.push(0);
+        while(starts.length<Math.min(maxWindows,Math.ceil(total/sampleSize))){
+          const start=Math.min(span,Math.floor(Math.random()*(span+1)));
+          if(!starts.some(x=>Math.abs(x-start)<sampleSize))starts.push(start);
+          else if(starts.length===1&&span)starts.push(Math.floor(span/2));
+          else break;
+        }
       }
+      const batches=await Promise.all(starts.map(start=>filtered(c.from("veste_catalog_products").select(columns)).order("id",{ascending:true}).range(start,start+sampleSize-1)));
+      const rows=[],ids=new Set();for(const batch of batches){if(batch.error)throw batch.error;for(const row of batch.data||[])if(!ids.has(row.id)){ids.add(row.id);rows.push(row)}}
       remoteCatalog=rows.map(normalize).filter(Boolean);remoteState="ready";remoteChecked=Date.now();
-      const d=data(),missing=[...new Set(d.votes.filter(v=>v.liked&&v.item?.source==="catalog"&&!remoteCatalog.some(p=>p.id===v.id)).map(v=>v.id))],extra=[];for(let i=0;i<missing.length;i+=100){const {data:offers,error}=await c.from("veste_catalog_products").select("id,name,description,affiliate_url,image_url,price,rrp_price,currency,group_key,merchant_category,brand,shop,color,audience,sizes,source_updated_at,in_stock,is_for_sale").in("id",missing.slice(i,i+100));if(error)break;extra.push(...(offers||[]).map(normalize).filter(Boolean))}const changed=shop.update(d,[...remoteCatalog,...extra],new Date().toISOString());if(changed||d.votes.some(v=>v.liked&&v.item?.source==="catalog"))saveLocal();
+      const d=data(),missing=[...new Set(d.votes.filter(v=>v.liked&&v.item?.source==="catalog"&&!remoteCatalog.some(p=>p.id===v.id)).map(v=>v.id))],extra=[];for(let i=0;i<missing.length;i+=100){const {data:offers,error}=await c.from("veste_catalog_products").select(columns).in("id",missing.slice(i,i+100));if(error)break;extra.push(...(offers||[]).map(normalize).filter(Boolean))}const changed=shop.update(d,[...remoteCatalog,...extra],new Date().toISOString());if(changed||d.votes.some(v=>v.liked&&v.item?.source==="catalog"))saveLocal();
       if(remoteCatalog.length){source="catalog";current=null}
     }catch(e){support.diagnostic('catalog');remoteError=String(e?.message||e||"Falha ao carregar catálogo.").slice(0,160);remoteState="error"}
     render();
@@ -1757,7 +1789,7 @@
     return best;
   }
   function options(){
-    const d=data(),seen=seenProducts(d.votes),catalog=remoteCatalog.length?remoteCatalog:d.catalog.map(normalize).filter(Boolean),all=(source==="idea"||!catalog.length?seeds:catalog).filter(p=>!seen(p)&&matches(p,f,source)).filter(p=>{const a=shop.analyze(p,state.pieces);return (!f.avoidSimilar||!a.similar.length)&&(!f.gapsOnly||["missing","expand"].includes(a.gap))&&(!f.hasLooks||shop.looks(p,state.pieces).length>0)});
+    const d=data(),seen=seenProducts(d.votes),catalog=remoteCatalog.length?remoteCatalog:d.catalog.map(normalize).filter(Boolean),base=source==="idea"?seeds:catalog.length?catalog:(remoteState==="error"||remoteState==="ready"?seeds:[]),all=base.filter(p=>!seen(p)&&matches(p,f,source)).filter(p=>{const a=shop.analyze(p,state.pieces);return (!f.avoidSimilar||!a.similar.length)&&(!f.gapsOnly||["missing","expand"].includes(a.gap))&&(!f.hasLooks||shop.looks(p,state.pieces).length>0)});
     if(source==="catalog"&&f.order==="cheap")return all.sort((a,b)=>(a.price??Infinity)-(b.price??Infinity));
     if(source==="catalog"&&f.order==="expensive")return all.sort((a,b)=>(b.price??-1)-(a.price??-1));
     const votes=d.votes.slice(-200).map(v=>({...v,item:stored(v.item)})).filter(v=>v.item),st=shop.stats(d),model=shoppingProfile();return all.map(p=>({p,n:f.order==="explore"?p.styles.reduce((n,k)=>n+1/(1+(st[k]?.likes||0)+(st[k]?.passes||0)),0)+ranked(p,votes)*.02:ranked(p,votes)*.35+(shop.purchaseValue(p,state.pieces,model,false).score??30)})).sort((a,b)=>b.n-a.n).map(x=>x.p);
@@ -1780,7 +1812,7 @@
     const st=shop.stats(d),lead=Object.entries(st).filter(([,v])=>v.likes>0).sort((a,b)=>(b[1].likes-b[1].passes)-(a[1].likes-a[1].passes)).slice(0,6);
     $("discTaste").innerHTML='<strong>Seu gosto em evolução</strong><p>'+liked.length+' curtidas · '+d.votes.filter(v=>!v.liked).length+' rejeições</p>'+(lead.length?'<div class="disc-tags">'+lead.map(([k,v])=>'<span>'+E(styleLabel[k])+' · '+v.likes+' ♥</span>').join("")+'</div>':'<p>As escolhas vão revelar novos estilos.</p>');
     if(tab==="feed"){
-      const all=options();current=all.find(p=>p.id===current?.id)||nextDiscoveryCard(all,d.votes,f.order)||null;$("discCount").textContent=all.length+" opções ainda não avaliadas · "+(audienceLabel[f.audience]||"Todos");$("discCard").innerHTML=current?tile(current):'<div class="disc-body"><h2>Nenhuma peça nos filtros</h2><p>'+(source==="catalog"&&!d.catalog.length?"Importe um catálogo real ou explore inspirações.":"Altere os filtros ou reveja as peças puladas.")+'</p></div>';
+      const all=options();current=all.find(p=>p.id===current?.id)||nextDiscoveryCard(all,d.votes,f.order)||null;$("discCount").textContent=all.length+" opções ainda não avaliadas · "+(audienceLabel[f.audience]||"Todos");$("discCard").innerHTML=current?tile(current):remoteState==="loading"?'<div class="disc-body"><h2>Carregando ofertas…</h2><p>O VESTE está buscando uma amostra variada do catálogo.</p></div>':'<div class="disc-body"><h2>Nenhuma peça nos filtros</h2><p>'+(source==="catalog"&&!d.catalog.length?"Tente atualizar as ofertas ou explore referências de estilo.":"Altere os filtros ou reveja as peças puladas.")+'</p></div>';
       $("discLike").disabled=!current;$("discPass").disabled=!current;$("discUndo").disabled=!history.length;
     }else{
       const saved=liked.slice().reverse().map(v=>{const p=stored(v.item),h=shop.track(d,v.id)?.history||[];if(p&&h.length)p.price=h[h.length-1].price;return p}).filter(p=>p&&(radarMode!=="alerts"||p.offerAvailable!==false&&shop.signal(shop.track(d,p.id))?.fresh));
@@ -1809,9 +1841,9 @@
   function apply(){
     const n=blank();for(const [k,id] of [["styles","discStyles"],["groups","discGroups"],["colors","discColors"]])n[k]=selectedValues($(id));for(const k of fields)n[k]=$("disc-"+k).value.trim();
     if((n.min!==""&&Number(n.min)<0)||(n.max!==""&&Number(n.max)<0)||(n.min!==""&&n.max!==""&&Number(n.min)>Number(n.max))){notify("Confira o intervalo de preço.");return}
-    n.avoidSimilar=$("discAvoidSimilar").checked;n.gapsOnly=$("discGaps").checked;n.hasLooks=$("discHasLooks").checked;f=n;current=null;render();$("discFilters").open=false;
+    n.avoidSimilar=$("discAvoidSimilar").checked;n.gapsOnly=$("discGaps").checked;n.hasLooks=$("discHasLooks").checked;f=n;current=null;remoteState="idle";remoteCatalog=[];loadRemote(true).catch(()=>{});render();$("discFilters").open=false;
   }
-  function reset(){f=blank();f.audience=profileAudience();lastAudience=f.audience;for(const id of ["discStyles","discGroups","discColors"])$(id).querySelectorAll("input").forEach(i=>i.checked=false);for(const k of fields)$("disc-"+k).value=f[k];for(const id of ["discAvoidSimilar","discGaps","discHasLooks"])$(id).checked=false;current=null;render()}
+  function reset(){f=blank();f.audience=profileAudience();lastAudience=f.audience;for(const id of ["discStyles","discGroups","discColors"])$(id).querySelectorAll("input").forEach(i=>i.checked=false);for(const k of fields)$("disc-"+k).value=f[k];for(const id of ["discAvoidSimilar","discGaps","discHasLooks"])$(id).checked=false;current=null;remoteState="idle";remoteCatalog=[];loadRemote(true).catch(()=>{});render()}
   function mount(){
     if(mounted)return;mounted=true;source="catalog";
     document.querySelector(".nav-list").insertAdjacentHTML("beforeend",'<button class="nav-btn" data-route="discover"><span class="nav-icon">◇</span> Descobrir</button>');
@@ -1840,11 +1872,10 @@
     $("discCard").addEventListener("touchstart",e=>{const t=e.touches[0];touch=e.target.closest("a,button,details,input,select,label")?null:[t.clientX,t.clientY]},{passive:true});
     $("discCard").addEventListener("touchcancel",()=>{touch=null},{passive:true});
     $("discCard").addEventListener("touchend",e=>{if(!touch)return;const t=e.changedTouches[0],dx=t.clientX-touch[0],dy=t.clientY-touch[1];touch=null;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.6)vote(dx>0)},{passive:true});
-    loadRemote().catch(()=>{});
-    const oldNavigate=navigate;navigate=function(route){if(route!=="discover")return oldNavigate(route);if(remoteState!=="loading"&&Date.now()-remoteChecked>15*60*1000)loadRemote(true).catch(()=>{});state.view=route;document.querySelectorAll(".view").forEach(el=>el.classList.toggle("active",el.id==="view-discover"));document.querySelectorAll("[data-route]").forEach(el=>el.classList.toggle("active",el.dataset.route===route));$("topbarTitle").textContent="SEU RADAR";render();window.scrollTo({top:0,behavior:"smooth"})};
+    const oldNavigate=navigate;navigate=function(route){if(route!=="discover")return oldNavigate(route);if(remoteState!=="loading"&&(remoteState==="idle"||Date.now()-remoteChecked>15*60*1000))loadRemote(true).catch(()=>{});state.view=route;document.querySelectorAll(".view").forEach(el=>el.classList.toggle("active",el.id==="view-discover"));document.querySelectorAll("[data-route]").forEach(el=>el.classList.toggle("active",el.dataset.route===route));$("topbarTitle").textContent="SEU RADAR";render();window.scrollTo({top:0,behavior:"smooth"})};
     const oldRender=renderAll;renderAll=function(){oldRender();if(state.view==="discover")render()};
   }
-  function useProfile(force=false){if(!mounted)return;const next=profileAudience();if(!force&&next===lastAudience)return;lastAudience=next;f.audience=next;$("disc-audience").value=next;current=null;render()}
+  function useProfile(force=false){if(!mounted)return;const next=profileAudience();if(!force&&next===lastAudience)return;lastAudience=next;f.audience=next;$("disc-audience").value=next;current=null;remoteState="idle";remoteCatalog=[];if(state.view==="discover")loadRemote(true).catch(()=>{});render()}
   return {mount,loadRemote,normalize,parsePrice,matches,csv,blank,seeds,styleLabel,shop,useProfile};
 }
 
@@ -2250,7 +2281,7 @@
 
   // Support, privacy requests and opt-in minimal diagnostic codes.
   const support=(()=>{
-    const E=escapeHTML,release='7.5.1',kindLabels={bug:'Problema / bug',suggestion:'Sugestão',experience:'Experiência de uso',privacy:'Privacidade e dados',delete_account:'Exclusão da conta'},statusLabels={new:'Recebido',review:'Em análise',resolved:'Concluído',cancelled:'Cancelado'};
+    const E=escapeHTML,release='7.5.2',kindLabels={bug:'Problema / bug',suggestion:'Sugestão',experience:'Experiência de uso',privacy:'Privacidade e dados',delete_account:'Exclusão da conta'},statusLabels={new:'Recebido',review:'Em análise',resolved:'Concluído',cancelled:'Cancelado'};
     let mounted=false,loading=false,consent=()=>{try{return cloud.canEnter()&&localStorage.getItem(STORAGE_KEY+':diagnostics-consent-v1')==='yes'}catch{return false}};const recent=new Map();
     async function diagnostic(code){if(!consent()||!cloud.canEnter()||!navigator.onLine||!['boot','sync','diary_load','diary_save','catalog','weather'].includes(code))return;const now=Date.now();if(now-(recent.get(code)||0)<60000)return;recent.set(code,now);try{const c=await cloud.catalogClient();if(consent())await c.rpc('veste_record_diagnostic',{p_code:code})}catch{}}
     async function submit(kind,message,rating=null,context=false,affectedPage=null){
