@@ -11,5 +11,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: node --check app.js && node --check admin/admin.js && node tests/p2-shopping.cjs
+      - run: node --check app.js && node --check admin/admin.js && node tests/p2-shopping.cjs && node --test tests/look-rotation.cjs tests/work-occasion.cjs
       - run: python3 -m py_compile scripts/awin_sync.py && python3 -m unittest discover -s tests -p 'test_*.py'
