@@ -155,7 +155,31 @@
     $('looksGrid').innerHTML=state.candidates.length?state.candidates.map(renderLookCard).join(''):`<div class="empty-state"><div class="empty-symbol">✳</div><h3>Ainda não encontramos uma combinação.</h3><p>${escapeHTML(currentContext().occasion==="trabalho"?workLookHint:missingGuidance())}</p><button class="btn btn-dark" data-action="add">+ Adicionar roupa</button></div>`;
     $('lookGuidance').innerHTML=state.candidates.length?`<div class="mini-note">As sugestões seguem cores, ocasião, clima e suas preferências. Você decide o que realmente combina com você. O reconhecimento visual é opcional e depende de uma chave Gemini conectada. Confira sempre a classificação.</div>`:'';
   }
-  function generateLooks(){state.candidates=generateCandidates(currentContext());state.resultsGenerated=true;renderLooks()}
+  function lookRotationWeights(context){
+    const history=Array.isArray(state.settings.lookRotation)?state.settings.lookRotation:[];
+    const weights=Object.create(null);
+    history.filter(entry=>entry?.occasion===context.occasion&&Array.isArray(entry.ids)).slice(-6).forEach((entry,index,list)=>{
+      const weight=10+(index+1)*4;
+      for(const id of entry.ids)weights[id]=(weights[id]||0)+weight/list.length;
+    });
+    return weights;
+  }
+  function rememberLookRotation(context,candidates){
+    if(!candidates.length)return;
+    const required=new Set(Array.isArray(context.required)?context.required:[]);
+    const ids=[...new Set(candidates.flatMap(candidate=>candidate.ids).filter(id=>!required.has(id)))];
+    const history=Array.isArray(state.settings.lookRotation)?state.settings.lookRotation:[];
+    history.push({occasion:context.occasion,ids,at:new Date().toISOString()});
+    state.settings.lookRotation=history.slice(-18);
+    saveLocal();
+  }
+  function generateLooks(){
+    const context=currentContext();
+    state.candidates=generateCandidates({...context,rotationWeights:lookRotationWeights(context)});
+    state.resultsGenerated=true;
+    rememberLookRotation(context,state.candidates);
+    renderLooks();
+  }
   function findCandidate(key){return state.candidates.find(c=>c.key===key)}
   function loveLook(key){if(!findCandidate(key))return;const i=state.settings.loved.indexOf(key);if(i<0){state.settings.loved.push(key);state.settings.rejected=state.settings.rejected.filter(k=>k!==key);notify('Gostou! Vamos considerar essa preferência.')}else{state.settings.loved.splice(i,1);notify('Curtida removida.')}saveLocal();renderLooks();renderStyle()}
   function rejectLook(key){if(!findCandidate(key))return;if(!state.settings.rejected.includes(key))state.settings.rejected.push(key);state.settings.loved=state.settings.loved.filter(k=>k!==key);state.settings.favorites=state.settings.favorites.filter(f=>f.key!==key);saveLocal();generateLooks();renderAll();notify('Entendido. Essa combinação não será mais sugerida.')}
@@ -680,33 +704,42 @@
     ctx={...ctx,date:laundryDate(ctx.date)||localISO(new Date())};
     const m=intelligence();activeIntelligence=m;try{
     const excluded=new Set(Array.isArray(ctx.excludeKeys)?ctx.excludeKeys:[]);
-    const excludedIds=new Set(Array.isArray(ctx.excludeIds)?ctx.excludeIds:[]),preferred=new Set(Array.isArray(ctx.preferIds)?ctx.preferIds:[]),preferredGroups=new Set(Array.isArray(ctx.preferGroups)?ctx.preferGroups:[]);
+    const excludedIds=new Set(Array.isArray(ctx.excludeIds)?ctx.excludeIds:[]),preferred=new Set(Array.isArray(ctx.preferIds)?ctx.preferIds:[]),preferredGroups=new Set(Array.isArray(ctx.preferGroups)?ctx.preferGroups:[]),rotationWeights=ctx.rotationWeights&&typeof ctx.rotationWeights==='object'?ctx.rotationWeights:{};
     const required=Array.isArray(ctx.required)?ctx.required:[];
     if(required.some(id=>excludedIds.has(id)||!pieceById(id)||!eligibleForLook(pieceById(id),ctx)))return [];
     const lockedBy={};for(const id of required){const p=pieceById(id),s=slot[p.group];if(lockedBy[s]&&lockedBy[s]!==id)return [];lockedBy[s]=id}
     if(lockedBy.top&&pieceById(lockedBy.top)?.group==="onepiece"&&lockedBy.bottom)return [];
     const avail=state.pieces.filter(p=>eligibleForLook(p,ctx)&&!excludedIds.has(p.id)),by={};for(const p of avail)(by[p.group]||(by[p.group]=[])).push(p);
-    const preferredRank=p=>intelRank(p,ctx,m)+(preferred.has(p.id)?9:0);const rankCache=new Map();const rank=(a,base)=>{const k=(a[0]?.group||'empty')+'|'+(base?.color||'');if(!rankCache.has(k))rankCache.set(k,a.slice().sort((x,y)=>preferredRank(y)-preferredRank(x)+(base?12*(scoreColors(y.color,base.color)-scoreColors(x.color,base.color)):0)).slice(0,4));return rankCache.get(k)};
+    const preferredRank=p=>intelRank(p,ctx,m)+(preferred.has(p.id)?9:0)-.4*(Number(rotationWeights[p.id])||0);const rankCache=new Map();const rank=(a,base)=>{const k=(a[0]?.group||'empty')+'|'+(base?.color||'');if(!rankCache.has(k))rankCache.set(k,a.slice().sort((x,y)=>preferredRank(y)-preferredRank(x)+(base?12*(scoreColors(y.color,base.color)-scoreColors(x.color,base.color)):0)).slice(0,4));return rankCache.get(k)};
     const ordered=g=>(by[g]||[]).slice().sort((a,b)=>preferredRank(b)-preferredRank(a)).slice(0,32);const tops=lockedBy.top?[pieceById(lockedBy.top)]:ordered("top");
     const bottoms=lockedBy.bottom?[pieceById(lockedBy.bottom)]:ordered("bottom");
     const bases=[];for(const t of tops){if(t.group==="onepiece")continue;for(const b of bottoms)bases.push([t,b])}
     if(!lockedBy.bottom){const ones=lockedBy.top?(pieceById(lockedBy.top)?.group==="onepiece"?[pieceById(lockedBy.top)]:[]):(by.onepiece||[]).slice(0,40);for(const o of ones)bases.push([o,null])}
     const results=[],seen=new Set();
     for(const [t,b] of bases){
-      const opts=(g,base,enabled=true)=>lockedBy[g]?[pieceById(lockedBy[g])]:!enabled?[null]:[null,...rank(by[g]||[],base).slice(0,g==="shoes"?3:1)];
+      const opts=(g,base,enabled=true)=>lockedBy[g]?[pieceById(lockedBy[g])]:!enabled?[null]:[null,...rank(by[g]||[],base).slice(0,g==="shoes"||g==="accessory"?3:2)];
       const sh=opts("shoes",b||t);const ly=opts("layer",t,ctx.weather!=="quente");const ac=opts("accessory",t,state.settings.preferAccessories!==false);
       for(const s of sh)for(const l of ly)for(const a of ac){
         const o={top:t.id,bottom:b?.id||null,shoes:s?.id||null,layer:l?.id||null,accessory:a?.id||null};
         const c=makeCandidate(o,ctx,required);if(c&&by.shoes?.length&&!c.shoes)c.score-=18;if(c&&!excluded.has(c.key)&&!seen.has(c.key)){seen.add(c.key);results.push(c)}
       }
     }
-    const priority=c=>c.score+9*c.ids.filter(id=>preferred.has(id)).length+12*c.ids.filter(id=>preferredGroups.has(pieceById(id)?.group)).length;
+    const priority=c=>c.score+9*c.ids.filter(id=>preferred.has(id)).length+12*c.ids.filter(id=>preferredGroups.has(pieceById(id)?.group)).length-c.ids.reduce((sum,id)=>sum+(Number(rotationWeights[id])||0),0);
     results.sort((a,b)=>priority(b)-priority(a));
     if(ctx.pool)return results.slice(0,Math.min(120,ctx.pool));
-    const chosen=[],used=new Set();
+    const chosen=[],used=new Set(),chosenPieceUse=new Map();
     while(chosen.length<8&&results.length){let best=null,bs=-Infinity;
-      for(const c of results.slice(0,200)){if(used.has(c.key))continue;const maxOverlap=chosen.reduce((m,x)=>Math.max(m,c.ids.filter(id=>x.ids.includes(id)).length/Math.max(x.ids.length,c.ids.length)),0);let value=c.score-20*maxOverlap;if(value>bs){bs=value;best=c}}
-      if(!best)break;chosen.push(best);used.add(best.key);
+      for(const c of results.slice(0,240)){
+        if(used.has(c.key))continue;
+        const rotatingIds=c.ids.filter(id=>!required.includes(id));
+        const maxOverlap=chosen.reduce((m,x)=>Math.max(m,rotatingIds.filter(id=>x.ids.includes(id)).length/Math.max(x.ids.filter(id=>!required.includes(id)).length,rotatingIds.length,1)),0);
+        const repeatedPieces=rotatingIds.reduce((sum,id)=>sum+(chosenPieceUse.get(id)||0),0);
+        const value=priority(c)-32*maxOverlap-16*repeatedPieces;
+        if(value>bs){bs=value;best=c}
+      }
+      if(!best)break;
+      chosen.push(best);used.add(best.key);
+      for(const id of best.ids)if(!required.includes(id))chosenPieceUse.set(id,(chosenPieceUse.get(id)||0)+1);
     }return chosen;
     }finally{activeIntelligence=null}
   };
