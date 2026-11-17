@@ -200,7 +200,9 @@ def combine(items):
 def sync_catalog():
     publisher=os.environ["AWIN_PUBLISHER_ID"].strip()
     key=os.environ["AWIN_FEED_KEY"].strip()
-    allowed={int(x) for x in os.environ.get("AWIN_MERCHANT_IDS","118977").split(",") if x.strip()}
+    configured={int(x) for x in os.environ.get("AWIN_MERCHANT_IDS","118977,17652,17648").split(",") if x.strip()}
+    auto_joined=os.environ.get("AWIN_AUTO_JOINED","1").strip().lower() not in ("0","false","no")
+    allowed=set(configured)
     if not publisher.isdigit() or not key or not allowed: raise SyncIssue("catalog_config_missing")
     encoded=urllib.parse.quote(key,safe="")
     urls=[
@@ -212,9 +214,14 @@ def sync_catalog():
     try:
         params=urllib.parse.urlencode({"relationship":"joined","accessToken":os.environ["AWIN_API_TOKEN"]})
         programmes=json.loads(request_stage(f"https://api.awin.com/publishers/{publisher}/programmes?"+params,"programmes"))
-        if isinstance(programmes,list): confirmed={int(x["id"]) for x in programmes if isinstance(x,dict) and str(x.get("id","")).isdigit()}&allowed
-        print(f"programme membership confirmed={len(confirmed)} expected={len(allowed)}",flush=True)
-    except Exception: print("programme membership check unavailable",flush=True)
+        joined={int(x["id"]) for x in programmes if isinstance(x,dict) and str(x.get("id","")).isdigit()} if isinstance(programmes,list) else set()
+        if auto_joined:
+            if len(joined)>100: raise SyncIssue("joined_programme_limit_exceeded")
+            allowed.update(joined)
+        confirmed=joined&allowed
+        print(f"programme membership confirmed={len(confirmed)} configured={len(configured)} expected={len(allowed)} auto={int(auto_joined)}",flush=True)
+    except SyncIssue: raise
+    except Exception: print("programme membership check unavailable; using configured merchants",flush=True)
     for stage,url in urls:
         try:
             selected.update(select_feeds(request_stage(url,stage),allowed-set(selected),confirmed))
@@ -261,7 +268,8 @@ def sync_catalog():
     missing=sorted(allowed-set(selected))
     if missing:
         print("catalog pending merchants="+",".join(map(str,missing)),flush=True)
-    log("catalog",not missing,total,"Pending merchants: "+",".join(map(str,missing)) if missing else "Approved Awin legacy feeds imported; stock validated")
+        raise SyncIssue("catalog_pending_merchants_"+str(len(missing)))
+    log("catalog",True,total,"Approved Awin feeds imported; stock validated")
 def sync_transactions():
     pub=os.environ["AWIN_PUBLISHER_ID"]; token=os.environ["AWIN_API_TOKEN"]
     if not pub.isdigit() or not token: raise ValueError("Missing transaction config")
