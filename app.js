@@ -108,8 +108,11 @@
   function fitsWorkOccasion(piece, occasion){
     return occasion !== 'trabalho' || (piece.occasions || []).includes('trabalho');
   }
+  function eligibleForLook(piece, context){
+    return availableAt(piece, context.date) && fitsWorkOccasion(piece, context.occasion);
+  }
   const workLookHint = 'Para montar um look de trabalho, marque “Trabalho” nas peças que você usaria: uma parte de cima e uma de baixo, ou uma peça única. Para experimentar um look casual, escolha “Dia a dia”.';
-  function generateCandidates(context){const available=state.pieces.filter(p=>availableAt(p,context.date)&&fitsWorkOccasion(p,context.occasion));let by={};for(const g of available)(by[g.group]||(by[g.group]=[])).push(g);
+  function generateCandidates(context){const available=state.pieces.filter(p=>eligibleForLook(p,context));let by={};for(const g of available)(by[g.group]||(by[g.group]=[])).push(g);
     const tops=by.top||[],bottoms=by.bottom||[],ones=by.onepiece||[],shoes=by.shoes||[],layers=by.layer||[],accessories=state.settings.preferAccessories===false?[]:by.accessory||[];
     let bases=[];for(const top of tops)for(const bottom of bottoms)bases.push([top,bottom]);for(const one of ones)bases.push([one]);
     const relevantBases=sampleRandom(bases,Math.max(1200,Math.min(bases.length,1600)));
@@ -258,7 +261,7 @@
     const excluded=new Set([day.key||lookKey(day.ids||[]),...(Array.isArray(day.skippedKeys)?day.skippedKeys:[])].filter(Boolean)),blocked=new Set([...blockedIds,...selectedIds]),used=new Map(),usedKeys=new Set();
     for(const other of otherDays){const ids=Array.isArray(other.ids)?other.ids:[];if(other.key||ids.length)usedKeys.add(other.key||lookKey(ids));for(const id of ids)used.set(id,(used.get(id)||0)+1)}
     const core=ids=>lookKey(ids.filter(id=>['top','bottom','onepiece'].includes(pieceById(id)?.group))),oldCore=core(day.ids||[]);
-    const valid=choices.filter(c=>c?.key&&Array.isArray(c.ids)&&!excluded.has(c.key)&&c.ids.every(id=>!blocked.has(id)&&pieceById(id)&&availableAt(pieceById(id),day.date)));
+    const valid=choices.filter(c=>c?.key&&Array.isArray(c.ids)&&!excluded.has(c.key)&&c.ids.every(id=>!blocked.has(id)&&pieceById(id)&&eligibleForLook(pieceById(id),day)));
     const fresh=valid.filter(c=>!usedKeys.has(c.key)),pool=fresh.length?fresh:valid;
     const different=pool.filter(c=>core(c.ids)!==oldCore),options=selectedIds.length?pool:(different.length?different:pool);
     const keep=new Set((day.ids||[]).filter(id=>!blocked.has(id))),selectedGroups=new Set(selectedIds.map(id=>pieceById(id)?.group).filter(Boolean));
@@ -456,6 +459,7 @@
     $('piecePhoto').addEventListener('change',onPhotoSelected);$('analyzePhoto').addEventListener('click',analyzePhotoWithAI);$('getForecast').addEventListener('click',getForecast);$('todayGenerate').addEventListener('click',renderToday);$('generateWeek').addEventListener('click',generateWeek);$('saveAdvanced').addEventListener('click',saveAdvanced);$('addAvoidPair').addEventListener('click',addAvoidPair);$('connectAI').addEventListener('click',connectAI);$('disconnectAI').addEventListener('click',disconnectAI);$('aiReviewLooks').addEventListener('click',reviewLooksWithAI);$('pieceForm').addEventListener('submit',savePiece);$('closeDialog').addEventListener('click',closePieceDialog);$('cancelDialog').addEventListener('click',closePieceDialog);$('pieceDialog').addEventListener('click',e=>{if(e.target===$('pieceDialog'))closePieceDialog()});
     $('closetSearch').addEventListener('input',renderCloset);$('closetGroup').addEventListener('change',renderCloset);
     $('generateBtn').addEventListener('click',()=>{generateLooks();if(!state.candidates.length)notify('Cadastre mais peças para montar uma combinação.')});
+    $('occasion').addEventListener('change',()=>{if(state.resultsGenerated)generateLooks();else renderLooks()});
     $('savePrefs').addEventListener('click',savePreferences);$('resetFeedback').addEventListener('click',resetFeedback);
   }
 
@@ -590,7 +594,7 @@
   function coreValid(o){let p=pieceById(o.top),q=pieceById(o.bottom);return !!p&&((p.group==="onepiece"&&!q)||(p.group==="top"&&q?.group==="bottom"))}
   function valid(o,context,required=[]){
     const ids=[o.top,o.bottom,o.shoes,o.layer,o.accessory].filter(Boolean);
-    if(!coreValid(o)||new Set(ids).size!==ids.length||!matches(ids,required)||ids.some(id=>!pieceById(id)||!availableAt(pieceById(id),context.date)))return false;
+    if(!coreValid(o)||new Set(ids).size!==ids.length||!matches(ids,required)||ids.some(id=>!pieceById(id)||!eligibleForLook(pieceById(id),context)))return false;
     if(["shoes","layer","accessory"].some(k=>o[k]&&pieceById(o[k])?.group!==k))return false;
     if(hasForbiddenPair(ids)||state.settings.rejected.includes(lookKey(ids)))return false;
     if(context.weather==="quente"&&o.layer&&!required.includes(o.layer))return false;
@@ -678,10 +682,10 @@
     const excluded=new Set(Array.isArray(ctx.excludeKeys)?ctx.excludeKeys:[]);
     const excludedIds=new Set(Array.isArray(ctx.excludeIds)?ctx.excludeIds:[]),preferred=new Set(Array.isArray(ctx.preferIds)?ctx.preferIds:[]),preferredGroups=new Set(Array.isArray(ctx.preferGroups)?ctx.preferGroups:[]);
     const required=Array.isArray(ctx.required)?ctx.required:[];
-    if(required.some(id=>excludedIds.has(id)||!pieceById(id)||!availableAt(pieceById(id),ctx.date)))return [];
+    if(required.some(id=>excludedIds.has(id)||!pieceById(id)||!eligibleForLook(pieceById(id),ctx)))return [];
     const lockedBy={};for(const id of required){const p=pieceById(id),s=slot[p.group];if(lockedBy[s]&&lockedBy[s]!==id)return [];lockedBy[s]=id}
     if(lockedBy.top&&pieceById(lockedBy.top)?.group==="onepiece"&&lockedBy.bottom)return [];
-    const avail=state.pieces.filter(p=>availableAt(p,ctx.date)&&!excludedIds.has(p.id)),by={};for(const p of avail)(by[p.group]||(by[p.group]=[])).push(p);
+    const avail=state.pieces.filter(p=>eligibleForLook(p,ctx)&&!excludedIds.has(p.id)),by={};for(const p of avail)(by[p.group]||(by[p.group]=[])).push(p);
     const preferredRank=p=>intelRank(p,ctx,m)+(preferred.has(p.id)?9:0);const rankCache=new Map();const rank=(a,base)=>{const k=(a[0]?.group||'empty')+'|'+(base?.color||'');if(!rankCache.has(k))rankCache.set(k,a.slice().sort((x,y)=>preferredRank(y)-preferredRank(x)+(base?12*(scoreColors(y.color,base.color)-scoreColors(x.color,base.color)):0)).slice(0,4));return rankCache.get(k)};
     const ordered=g=>(by[g]||[]).slice().sort((a,b)=>preferredRank(b)-preferredRank(a)).slice(0,32);const tops=lockedBy.top?[pieceById(lockedBy.top)]:ordered("top");
     const bottoms=lockedBy.bottom?[pieceById(lockedBy.bottom)]:ordered("bottom");
@@ -709,11 +713,13 @@
   currentContext=function(){return {occasion:$("occasion").value,weather:$("weather").value,required:locks.slice(),rain:dailyForecast(localISO(new Date()))?.rain??null}};
   function renderLocks(){
     if(!$("v3locks"))return;locks=locks.filter(id=>availableAt(pieceById(id))&&pieceById(id));
-    $("v3lockSelect").innerHTML='<option value="">Selecione uma peça</option>'+state.pieces.filter(p=>availableAt(p)&&!locks.includes(p.id)).map(p=>'<option value="'+E(p.id)+'">'+E(p.name)+" · "+E(groupName(p.group))+"</option>").join("");
+    const context=currentContext();
+    $("v3lockSelect").innerHTML='<option value="">Selecione uma peça</option>'+state.pieces.filter(p=>eligibleForLook(p,context)&&!locks.includes(p.id)).map(p=>'<option value="'+E(p.id)+'">'+E(p.name)+" · "+E(groupName(p.group))+"</option>").join("");
     $("v3locks").innerHTML=locks.map(id=>'<button class="v3pill" data-v3-unlock="'+E(id)+'">'+E(pieceById(id).name)+" ×</button>").join("")||'<span class="v3muted">Nenhuma peça fixada.</span>';
   }
   function lock(id){
     const p=pieceById(id);if(!p||!availableAt(p)){notify("Esta peça está indisponível.");return}
+    if(!fitsWorkOccasion(p,currentContext().occasion)){notify('Esta peça não está marcada para Trabalho. Edite a peça ou escolha “Dia a dia”.');return}
     locks=locks.filter(k=>slot[pieceById(k)?.group]!==slot[p.group]&&!(p.group==="onepiece"&&pieceById(k)?.group==="bottom")&&!(p.group==="bottom"&&pieceById(k)?.group==="onepiece"));
     locks.push(id);renderLocks();navigate("looks");generateLooks();
   }
