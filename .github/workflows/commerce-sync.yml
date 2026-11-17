@@ -23,7 +23,8 @@ jobs:
       SUPABASE_URL: https://zodyzmeeossstkiwanqi.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       AWIN_PUBLISHER_ID: ${{ vars.AWIN_PUBLISHER_ID }}
-      AWIN_MERCHANT_IDS: ${{ format('{0},17652,17648', vars.AWIN_MERCHANT_IDS || '118977') }}
+      AWIN_MERCHANT_IDS: ${{ vars.AWIN_MERCHANT_IDS || '118977,17652,17648' }}
+      AWIN_AUTO_JOINED: '1'
       AWIN_FEED_KEY: ${{ secrets.AWIN_FEED_KEY }}
       AWIN_API_TOKEN: ${{ secrets.AWIN_API_TOKEN }}
     steps:
