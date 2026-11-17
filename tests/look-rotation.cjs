@@ -65,4 +65,5 @@ test('the production generator uses rotation history and per-round piece usage',
   assert.match(activeGenerator[0], /chosenPieceUse=new Map\(\)/);
   assert.match(activeGenerator[0], /repeatedPieces/);
   assert.match(source, /function rememberLookRotation\(context,candidates\)/);
+  assert.match(source, /const allowed=\[[^\]]*'lookRotation'/);
 });
