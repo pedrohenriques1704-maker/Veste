@@ -1,4 +1,7 @@
-# VESTE 2 — seu guarda-roupa inteligente
+# VESTE — seu guarda-roupa inteligente
+
+> **Estado atual:** a aplicação está na linha 7.5, com login obrigatório, sincronização Supabase, catálogo Awin, painel administrativo e PWA. As seções numeradas abaixo registram a evolução histórica; limitações descritas em versões antigas podem já ter sido substituídas.
+
 
 Aplicativo web instalável (PWA), em português, para organizar fotos de roupas reais e criar looks adequados ao seu estilo e à ocasião. **A versão 2 mantém a mesma base local e as mesmas chaves de armazenamento da versão 1**, de modo que a atualização no mesmo endereço normalmente preserva as peças, favoritos e histórico.
 
@@ -157,3 +160,13 @@ A configuração de Gemini permanece disponível, mas fica recolhida em **Recurs
 ### VESTE 7.0.3 — ícone oficial de IA
 
 O VESTE passa a usar um sparkle vetorial próprio para identificar recursos de IA. O desenho é aplicado por SVG mask/CSS, segue a cor terracota da interface e não depende de emoji. Ele aparece em ações, títulos, status e resultados de IA sem alterar a paleta do app.
+
+
+## VESTE 7.5.2 — correções pré-deploy
+
+- O catálogo deixa de ser baixado integralmente na inicialização. A consulta começa somente ao abrir **Descobrir** e usa uma amostra limitada e distribuída, com filtros básicos aplicados no servidor.
+- Ocasiões ausentes no feed comercial recebem classificação heurística revisável, permitindo que o filtro de ocasião funcione. Produtos sem público identificado não são descartados automaticamente.
+- O histórico curto de rotação de looks passa a integrar a sincronização, preservando a variedade após fechar e reabrir o aplicativo.
+- A sincronização Awin inclui automaticamente programas retornados como associados pela API. Os IDs configurados continuam como contingência.
+- Uma execução com programa aprovado sem feed compatível agora falha e aparece como falha no Admin; não registra mais sucesso parcial.
+- A validação automatizada cobre compras, variedade, ocasião de trabalho e o importador Awin.
