@@ -80,4 +80,15 @@ class TestFeed(unittest.TestCase):
             self.assertEqual(row["source_updated_at"],"2026-11-15T14:08:15+00:00")
             log.assert_called_once()
 
+    def test_missing_approved_feed_fails_the_run(self):
+        import csv,io,json
+        programmes=json.dumps([{"id":118977},{"id":112756}]).encode()
+        meta=(b'Merchant ID,Merchant Name,Membership Status,Last Imported,URL\n'
+              b'118977,Lauri,active,2026-11-15 14:08:15,https://productdata.awin.com/feed\n')
+        output=io.StringIO(); product=item(); writer=csv.DictWriter(output,fieldnames=product.keys());writer.writeheader();writer.writerow(product)
+        stages=[programmes,meta,a.SyncIssue("legacy_list_no_approved_legacy"),output.getvalue().encode()]
+        with patch.dict(a.os.environ,{"AWIN_PUBLISHER_ID":"123","AWIN_FEED_KEY":"test","AWIN_MERCHANT_IDS":"118977","AWIN_AUTO_JOINED":"1","AWIN_API_TOKEN":"token"}),patch.object(a,"request_stage",side_effect=stages),patch.object(a,"db"),patch.object(a,"log"):
+            with self.assertRaisesRegex(a.SyncIssue,"catalog_pending_merchants_1"):
+                a.sync_catalog()
+
 if __name__=="__main__":unittest.main()
