@@ -211,17 +211,19 @@ def sync_catalog():
         ("legacy_list",f"https://productdata.awin.com/datafeed/list/apikey/{encoded}")
     ]
     selected={}; last_code="feed_list_no_approved_legacy"; confirmed=set()
-    try:
-        params=urllib.parse.urlencode({"relationship":"joined","accessToken":os.environ["AWIN_API_TOKEN"]})
-        programmes=json.loads(request_stage(f"https://api.awin.com/publishers/{publisher}/programmes?"+params,"programmes"))
-        joined={int(x["id"]) for x in programmes if isinstance(x,dict) and str(x.get("id","")).isdigit()} if isinstance(programmes,list) else set()
-        if auto_joined:
+    if auto_joined:
+        try:
+            params=urllib.parse.urlencode({"relationship":"joined","accessToken":os.environ["AWIN_API_TOKEN"]})
+            programmes=json.loads(request_stage(f"https://api.awin.com/publishers/{publisher}/programmes?"+params,"programmes"))
+            joined={int(x["id"]) for x in programmes if isinstance(x,dict) and str(x.get("id","")).isdigit()} if isinstance(programmes,list) else set()
             if len(joined)>100: raise SyncIssue("joined_programme_limit_exceeded")
             allowed.update(joined)
-        confirmed=joined&allowed
-        print(f"programme membership confirmed={len(confirmed)} configured={len(configured)} expected={len(allowed)} auto={int(auto_joined)}",flush=True)
-    except SyncIssue: raise
-    except Exception: print("programme membership check unavailable; using configured merchants",flush=True)
+            confirmed=joined&allowed
+            print(f"programme membership confirmed={len(confirmed)} configured={len(configured)} expected={len(allowed)} auto=1",flush=True)
+        except SyncIssue: raise
+        except Exception: print("programme membership check unavailable; using configured merchants",flush=True)
+    else:
+        print(f"programme membership configured={len(configured)} expected={len(allowed)} auto=0",flush=True)
     for stage,url in urls:
         try:
             selected.update(select_feeds(request_stage(url,stage),allowed-set(selected),confirmed))
