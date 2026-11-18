@@ -197,7 +197,7 @@ def combine(items):
             out[x["id"]]={**choose,"sizes":sizes,"variant_count":count}
         else: out[x["id"]]=x
     return list(out.values())
-def bounded_catalog(products, limit=8000):
+def bounded_catalog(products, limit=3000):
     """Keep a stable, merchant-wide sample so large feeds remain cheap to refresh."""
     if len(products) <= limit: return products
     return sorted(products, key=lambda p: hashlib.sha256(p["id"].encode()).digest())[:limit]
