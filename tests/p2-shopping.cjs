@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const s=fs.readFileSync(require('node:path').join(__dirname,'..','app.js'),'utf8');
 const core=s.slice(s.indexOf("  const GROUPS"),s.indexOf("  const $ ="));
 const discovery=s.slice(s.indexOf("function discoveryFeature(){"),s.indexOf("  const TRASH_WINDOW"));
-const factory=new Function(core+"const state={pieces:[],settings:{prefs:['casual'],v3:{ratings:{}},avoidPairs:[],favorites:[]}};const escapeHTML=s=>String(s).replace(/</g,'&lt;');const isDemoPiece=p=>!!p.demo;const shoppingProfile=()=>({learned:{casual:3},observed:6});"+discovery+"return {d:discoveryFeature(),state};");
+const factory=new Function(core+"const state={pieces:[],settings:{prefs:['casual'],v3:{ratings:{}},avoidPairs:[],favorites:[]}};const escapeHTML=s=>String(s).replace(/</g,'&lt;');const isDemoPiece=p=>!!p.demo;const availableAt=p=>!!p&&p.available!==false&&!p.deletedAt;const shoppingProfile=()=>({learned:{casual:3},observed:6});"+discovery+"return {d:discoveryFeature(),state};");
 const {d,state}=factory();
 const p=(id,group,color,name,extras={})=>({id,group,color,name,styles:['casual'],available:true,...extras});
 const a=p("x","top","bege","Camisa de linho",{source:"catalog",price:100,occasion:["casual"],url:"https://www.awin1.com/pclick.php?p=123"}),b=p("b","bottom","preto","Calça"),c=p("c","shoes","marrom","Sapato"),layer=p("d","layer","marinho","Blazer");
@@ -25,6 +25,9 @@ const cases=[
 ["valid product",()=>d.normalize({name:"Camisa",group:"top",url:"https://example.com",price:"129,90"}).price===129.9],
 ["unsafe product link",()=>d.normalize({name:"Camisa",url:"javascript:alert(1)"})===null],
 ["availability false survives normalization",()=>d.normalize({...a,offerAvailable:false}).offerAvailable===false],
+["catalog occasion inferred",()=>d.normalize({name:"Blazer social",group:"layer",url:"https://example.com/produto"}).occasion.includes("trabalho")],
+["catalog unknown audience remains eligible",()=>{const filter=d.blank();filter.audience="masculino";return d.matches({...a,audience:""},filter,"catalog")}],
+["catalog load is bounded and lazy",()=>{const load=s.match(/async function loadRemote\(force=false\)\{[\s\S]*?function rejectedProductKey/);return !!load&&/sampleSize=300,maxWindows=3/.test(load[0])&&!/while\(true\)/.test(load[0])&&!/\n    loadRemote\(\)\.catch/.test(s.slice(s.indexOf("function mount(){",s.indexOf("function discoveryFeature(){")),s.indexOf("const oldNavigate=navigate",s.indexOf("function discoveryFeature(){"))))}],
 ["syntax",()=>{new Function(s);return true}],
 ];
 const data={votes:[{liked:true,id:a.id,item:a}],tracks:[]};d.shop.seed(data,a,"2026-11-01");

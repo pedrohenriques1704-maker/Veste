@@ -108,8 +108,11 @@
   function fitsWorkOccasion(piece, occasion){
     return occasion !== 'trabalho' || (piece.occasions || []).includes('trabalho');
   }
+  function eligibleForLook(piece, context){
+    return availableAt(piece, context.date) && fitsWorkOccasion(piece, context.occasion);
+  }
   const workLookHint = 'Para montar um look de trabalho, marque “Trabalho” nas peças que você usaria: uma parte de cima e uma de baixo, ou uma peça única. Para experimentar um look casual, escolha “Dia a dia”.';
-  function generateCandidates(context){const available=state.pieces.filter(p=>availableAt(p,context.date)&&fitsWorkOccasion(p,context.occasion));let by={};for(const g of available)(by[g.group]||(by[g.group]=[])).push(g);
+  function generateCandidates(context){const available=state.pieces.filter(p=>eligibleForLook(p,context));let by={};for(const g of available)(by[g.group]||(by[g.group]=[])).push(g);
     const tops=by.top||[],bottoms=by.bottom||[],ones=by.onepiece||[],shoes=by.shoes||[],layers=by.layer||[],accessories=state.settings.preferAccessories===false?[]:by.accessory||[];
     let bases=[];for(const top of tops)for(const bottom of bottoms)bases.push([top,bottom]);for(const one of ones)bases.push([one]);
     const relevantBases=sampleRandom(bases,Math.max(1200,Math.min(bases.length,1600)));
@@ -152,7 +155,31 @@
     $('looksGrid').innerHTML=state.candidates.length?state.candidates.map(renderLookCard).join(''):`<div class="empty-state"><div class="empty-symbol">✳</div><h3>Ainda não encontramos uma combinação.</h3><p>${escapeHTML(currentContext().occasion==="trabalho"?workLookHint:missingGuidance())}</p><button class="btn btn-dark" data-action="add">+ Adicionar roupa</button></div>`;
     $('lookGuidance').innerHTML=state.candidates.length?`<div class="mini-note">As sugestões seguem cores, ocasião, clima e suas preferências. Você decide o que realmente combina com você. O reconhecimento visual é opcional e depende de uma chave Gemini conectada. Confira sempre a classificação.</div>`:'';
   }
-  function generateLooks(){state.candidates=generateCandidates(currentContext());state.resultsGenerated=true;renderLooks()}
+  function lookRotationWeights(context){
+    const history=Array.isArray(state.settings.lookRotation)?state.settings.lookRotation:[];
+    const weights=Object.create(null);
+    history.filter(entry=>entry?.occasion===context.occasion&&Array.isArray(entry.ids)).slice(-6).forEach((entry,index,list)=>{
+      const weight=10+(index+1)*4;
+      for(const id of entry.ids)weights[id]=(weights[id]||0)+weight/list.length;
+    });
+    return weights;
+  }
+  function rememberLookRotation(context,candidates){
+    if(!candidates.length)return;
+    const required=new Set(Array.isArray(context.required)?context.required:[]);
+    const ids=[...new Set(candidates.flatMap(candidate=>candidate.ids).filter(id=>!required.has(id)))];
+    const history=Array.isArray(state.settings.lookRotation)?state.settings.lookRotation:[];
+    history.push({occasion:context.occasion,ids,at:new Date().toISOString()});
+    state.settings.lookRotation=history.slice(-18);
+    saveLocal();
+  }
+  function generateLooks(){
+    const context=currentContext();
+    state.candidates=generateCandidates({...context,rotationWeights:lookRotationWeights(context)});
+    state.resultsGenerated=true;
+    rememberLookRotation(context,state.candidates);
+    renderLooks();
+  }
   function findCandidate(key){return state.candidates.find(c=>c.key===key)}
   function loveLook(key){if(!findCandidate(key))return;const i=state.settings.loved.indexOf(key);if(i<0){state.settings.loved.push(key);state.settings.rejected=state.settings.rejected.filter(k=>k!==key);notify('Gostou! Vamos considerar essa preferência.')}else{state.settings.loved.splice(i,1);notify('Curtida removida.')}saveLocal();renderLooks();renderStyle()}
   function rejectLook(key){if(!findCandidate(key))return;if(!state.settings.rejected.includes(key))state.settings.rejected.push(key);state.settings.loved=state.settings.loved.filter(k=>k!==key);state.settings.favorites=state.settings.favorites.filter(f=>f.key!==key);saveLocal();generateLooks();renderAll();notify('Entendido. Essa combinação não será mais sugerida.')}
@@ -258,7 +285,7 @@
     const excluded=new Set([day.key||lookKey(day.ids||[]),...(Array.isArray(day.skippedKeys)?day.skippedKeys:[])].filter(Boolean)),blocked=new Set([...blockedIds,...selectedIds]),used=new Map(),usedKeys=new Set();
     for(const other of otherDays){const ids=Array.isArray(other.ids)?other.ids:[];if(other.key||ids.length)usedKeys.add(other.key||lookKey(ids));for(const id of ids)used.set(id,(used.get(id)||0)+1)}
     const core=ids=>lookKey(ids.filter(id=>['top','bottom','onepiece'].includes(pieceById(id)?.group))),oldCore=core(day.ids||[]);
-    const valid=choices.filter(c=>c?.key&&Array.isArray(c.ids)&&!excluded.has(c.key)&&c.ids.every(id=>!blocked.has(id)&&pieceById(id)&&availableAt(pieceById(id),day.date)));
+    const valid=choices.filter(c=>c?.key&&Array.isArray(c.ids)&&!excluded.has(c.key)&&c.ids.every(id=>!blocked.has(id)&&pieceById(id)&&eligibleForLook(pieceById(id),day)));
     const fresh=valid.filter(c=>!usedKeys.has(c.key)),pool=fresh.length?fresh:valid;
     const different=pool.filter(c=>core(c.ids)!==oldCore),options=selectedIds.length?pool:(different.length?different:pool);
     const keep=new Set((day.ids||[]).filter(id=>!blocked.has(id))),selectedGroups=new Set(selectedIds.map(id=>pieceById(id)?.group).filter(Boolean));
@@ -456,6 +483,7 @@
     $('piecePhoto').addEventListener('change',onPhotoSelected);$('analyzePhoto').addEventListener('click',analyzePhotoWithAI);$('getForecast').addEventListener('click',getForecast);$('todayGenerate').addEventListener('click',renderToday);$('generateWeek').addEventListener('click',generateWeek);$('saveAdvanced').addEventListener('click',saveAdvanced);$('addAvoidPair').addEventListener('click',addAvoidPair);$('connectAI').addEventListener('click',connectAI);$('disconnectAI').addEventListener('click',disconnectAI);$('aiReviewLooks').addEventListener('click',reviewLooksWithAI);$('pieceForm').addEventListener('submit',savePiece);$('closeDialog').addEventListener('click',closePieceDialog);$('cancelDialog').addEventListener('click',closePieceDialog);$('pieceDialog').addEventListener('click',e=>{if(e.target===$('pieceDialog'))closePieceDialog()});
     $('closetSearch').addEventListener('input',renderCloset);$('closetGroup').addEventListener('change',renderCloset);
     $('generateBtn').addEventListener('click',()=>{generateLooks();if(!state.candidates.length)notify('Cadastre mais peças para montar uma combinação.')});
+    $('occasion').addEventListener('change',()=>{if(state.resultsGenerated)generateLooks();else renderLooks()});
     $('savePrefs').addEventListener('click',savePreferences);$('resetFeedback').addEventListener('click',resetFeedback);
   }
 
@@ -590,7 +618,7 @@
   function coreValid(o){let p=pieceById(o.top),q=pieceById(o.bottom);return !!p&&((p.group==="onepiece"&&!q)||(p.group==="top"&&q?.group==="bottom"))}
   function valid(o,context,required=[]){
     const ids=[o.top,o.bottom,o.shoes,o.layer,o.accessory].filter(Boolean);
-    if(!coreValid(o)||new Set(ids).size!==ids.length||!matches(ids,required)||ids.some(id=>!pieceById(id)||!availableAt(pieceById(id),context.date)))return false;
+    if(!coreValid(o)||new Set(ids).size!==ids.length||!matches(ids,required)||ids.some(id=>!pieceById(id)||!eligibleForLook(pieceById(id),context)))return false;
     if(["shoes","layer","accessory"].some(k=>o[k]&&pieceById(o[k])?.group!==k))return false;
     if(hasForbiddenPair(ids)||state.settings.rejected.includes(lookKey(ids)))return false;
     if(context.weather==="quente"&&o.layer&&!required.includes(o.layer))return false;
@@ -676,44 +704,55 @@
     ctx={...ctx,date:laundryDate(ctx.date)||localISO(new Date())};
     const m=intelligence();activeIntelligence=m;try{
     const excluded=new Set(Array.isArray(ctx.excludeKeys)?ctx.excludeKeys:[]);
-    const excludedIds=new Set(Array.isArray(ctx.excludeIds)?ctx.excludeIds:[]),preferred=new Set(Array.isArray(ctx.preferIds)?ctx.preferIds:[]),preferredGroups=new Set(Array.isArray(ctx.preferGroups)?ctx.preferGroups:[]);
+    const excludedIds=new Set(Array.isArray(ctx.excludeIds)?ctx.excludeIds:[]),preferred=new Set(Array.isArray(ctx.preferIds)?ctx.preferIds:[]),preferredGroups=new Set(Array.isArray(ctx.preferGroups)?ctx.preferGroups:[]),rotationWeights=ctx.rotationWeights&&typeof ctx.rotationWeights==='object'?ctx.rotationWeights:{};
     const required=Array.isArray(ctx.required)?ctx.required:[];
-    if(required.some(id=>excludedIds.has(id)||!pieceById(id)||!availableAt(pieceById(id),ctx.date)))return [];
+    if(required.some(id=>excludedIds.has(id)||!pieceById(id)||!eligibleForLook(pieceById(id),ctx)))return [];
     const lockedBy={};for(const id of required){const p=pieceById(id),s=slot[p.group];if(lockedBy[s]&&lockedBy[s]!==id)return [];lockedBy[s]=id}
     if(lockedBy.top&&pieceById(lockedBy.top)?.group==="onepiece"&&lockedBy.bottom)return [];
-    const avail=state.pieces.filter(p=>availableAt(p,ctx.date)&&!excludedIds.has(p.id)),by={};for(const p of avail)(by[p.group]||(by[p.group]=[])).push(p);
-    const preferredRank=p=>intelRank(p,ctx,m)+(preferred.has(p.id)?9:0);const rankCache=new Map();const rank=(a,base)=>{const k=(a[0]?.group||'empty')+'|'+(base?.color||'');if(!rankCache.has(k))rankCache.set(k,a.slice().sort((x,y)=>preferredRank(y)-preferredRank(x)+(base?12*(scoreColors(y.color,base.color)-scoreColors(x.color,base.color)):0)).slice(0,4));return rankCache.get(k)};
+    const avail=state.pieces.filter(p=>eligibleForLook(p,ctx)&&!excludedIds.has(p.id)),by={};for(const p of avail)(by[p.group]||(by[p.group]=[])).push(p);
+    const preferredRank=p=>intelRank(p,ctx,m)+(preferred.has(p.id)?9:0)-.4*(Number(rotationWeights[p.id])||0);const rankCache=new Map();const rank=(a,base)=>{const k=(a[0]?.group||'empty')+'|'+(base?.color||'');if(!rankCache.has(k))rankCache.set(k,a.slice().sort((x,y)=>preferredRank(y)-preferredRank(x)+(base?12*(scoreColors(y.color,base.color)-scoreColors(x.color,base.color)):0)).slice(0,4));return rankCache.get(k)};
     const ordered=g=>(by[g]||[]).slice().sort((a,b)=>preferredRank(b)-preferredRank(a)).slice(0,32);const tops=lockedBy.top?[pieceById(lockedBy.top)]:ordered("top");
     const bottoms=lockedBy.bottom?[pieceById(lockedBy.bottom)]:ordered("bottom");
     const bases=[];for(const t of tops){if(t.group==="onepiece")continue;for(const b of bottoms)bases.push([t,b])}
     if(!lockedBy.bottom){const ones=lockedBy.top?(pieceById(lockedBy.top)?.group==="onepiece"?[pieceById(lockedBy.top)]:[]):(by.onepiece||[]).slice(0,40);for(const o of ones)bases.push([o,null])}
     const results=[],seen=new Set();
     for(const [t,b] of bases){
-      const opts=(g,base,enabled=true)=>lockedBy[g]?[pieceById(lockedBy[g])]:!enabled?[null]:[null,...rank(by[g]||[],base).slice(0,g==="shoes"?3:1)];
+      const opts=(g,base,enabled=true)=>lockedBy[g]?[pieceById(lockedBy[g])]:!enabled?[null]:[null,...rank(by[g]||[],base).slice(0,g==="shoes"||g==="accessory"?3:2)];
       const sh=opts("shoes",b||t);const ly=opts("layer",t,ctx.weather!=="quente");const ac=opts("accessory",t,state.settings.preferAccessories!==false);
       for(const s of sh)for(const l of ly)for(const a of ac){
         const o={top:t.id,bottom:b?.id||null,shoes:s?.id||null,layer:l?.id||null,accessory:a?.id||null};
         const c=makeCandidate(o,ctx,required);if(c&&by.shoes?.length&&!c.shoes)c.score-=18;if(c&&!excluded.has(c.key)&&!seen.has(c.key)){seen.add(c.key);results.push(c)}
       }
     }
-    const priority=c=>c.score+9*c.ids.filter(id=>preferred.has(id)).length+12*c.ids.filter(id=>preferredGroups.has(pieceById(id)?.group)).length;
+    const priority=c=>c.score+9*c.ids.filter(id=>preferred.has(id)).length+12*c.ids.filter(id=>preferredGroups.has(pieceById(id)?.group)).length-c.ids.reduce((sum,id)=>sum+(Number(rotationWeights[id])||0),0);
     results.sort((a,b)=>priority(b)-priority(a));
     if(ctx.pool)return results.slice(0,Math.min(120,ctx.pool));
-    const chosen=[],used=new Set();
+    const chosen=[],used=new Set(),chosenPieceUse=new Map();
     while(chosen.length<8&&results.length){let best=null,bs=-Infinity;
-      for(const c of results.slice(0,200)){if(used.has(c.key))continue;const maxOverlap=chosen.reduce((m,x)=>Math.max(m,c.ids.filter(id=>x.ids.includes(id)).length/Math.max(x.ids.length,c.ids.length)),0);let value=c.score-20*maxOverlap;if(value>bs){bs=value;best=c}}
-      if(!best)break;chosen.push(best);used.add(best.key);
+      for(const c of results.slice(0,240)){
+        if(used.has(c.key))continue;
+        const rotatingIds=c.ids.filter(id=>!required.includes(id));
+        const maxOverlap=chosen.reduce((m,x)=>Math.max(m,rotatingIds.filter(id=>x.ids.includes(id)).length/Math.max(x.ids.filter(id=>!required.includes(id)).length,rotatingIds.length,1)),0);
+        const repeatedPieces=rotatingIds.reduce((sum,id)=>sum+(chosenPieceUse.get(id)||0),0);
+        const value=priority(c)-32*maxOverlap-16*repeatedPieces;
+        if(value>bs){bs=value;best=c}
+      }
+      if(!best)break;
+      chosen.push(best);used.add(best.key);
+      for(const id of best.ids)if(!required.includes(id))chosenPieceUse.set(id,(chosenPieceUse.get(id)||0)+1);
     }return chosen;
     }finally{activeIntelligence=null}
   };
   currentContext=function(){return {occasion:$("occasion").value,weather:$("weather").value,required:locks.slice(),rain:dailyForecast(localISO(new Date()))?.rain??null}};
   function renderLocks(){
     if(!$("v3locks"))return;locks=locks.filter(id=>availableAt(pieceById(id))&&pieceById(id));
-    $("v3lockSelect").innerHTML='<option value="">Selecione uma peça</option>'+state.pieces.filter(p=>availableAt(p)&&!locks.includes(p.id)).map(p=>'<option value="'+E(p.id)+'">'+E(p.name)+" · "+E(groupName(p.group))+"</option>").join("");
+    const context=currentContext();
+    $("v3lockSelect").innerHTML='<option value="">Selecione uma peça</option>'+state.pieces.filter(p=>eligibleForLook(p,context)&&!locks.includes(p.id)).map(p=>'<option value="'+E(p.id)+'">'+E(p.name)+" · "+E(groupName(p.group))+"</option>").join("");
     $("v3locks").innerHTML=locks.map(id=>'<button class="v3pill" data-v3-unlock="'+E(id)+'">'+E(pieceById(id).name)+" ×</button>").join("")||'<span class="v3muted">Nenhuma peça fixada.</span>';
   }
   function lock(id){
     const p=pieceById(id);if(!p||!availableAt(p)){notify("Esta peça está indisponível.");return}
+    if(!fitsWorkOccasion(p,currentContext().occasion)){notify('Esta peça não está marcada para Trabalho. Edite a peça ou escolha “Dia a dia”.');return}
     locks=locks.filter(k=>slot[pieceById(k)?.group]!==slot[p.group]&&!(p.group==="onepiece"&&pieceById(k)?.group==="bottom")&&!(p.group==="bottom"&&pieceById(k)?.group==="onepiece"));
     locks.push(id);renderLocks();navigate("looks");generateLooks();
   }
@@ -853,7 +892,7 @@
   const validUid=id=>typeof id==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
   function defaults(input={}){
     const out={prefs:['casual','elegante'],loved:[],rejected:[],favorites:[],wearHistory:[],preferAccessories:true,repeatDays:3,avoidPairs:[],weatherCity:'Rio de Janeiro',weekPlan:null};
-    const allowed=['prefs','loved','rejected','favorites','wearHistory','preferAccessories','repeatDays','avoidPairs','weatherCity','weekPlan','weekdayOccasion','weekendOccasion','aiAutoAnalyze','v3','demoInitialized','discovery','laundryDays'];
+    const allowed=['prefs','loved','rejected','favorites','wearHistory','preferAccessories','repeatDays','avoidPairs','weatherCity','weekPlan','weekdayOccasion','weekendOccasion','aiAutoAnalyze','v3','demoInitialized','discovery','laundryDays','lookRotation'];
     for(const k of allowed)if(Object.hasOwn(input,k))out[k]=input[k];
     for(const k of ['prefs','loved','rejected','favorites','wearHistory','avoidPairs'])if(!Array.isArray(out[k]))out[k]=[];
     if(out.v3&&typeof out.v3!=='object')delete out.v3;
@@ -1589,7 +1628,16 @@
     const g=norm(r.audience||r.gender),audience=/^(male|men|masculino)$/.test(g)?"masculino":/^(female|women|feminino)$/.test(g)?"feminino":/^(unisex|unissex)$/.test(g)?"unissex":"";
     const currency=String(r.currency||r.currency_code||"BRL").toUpperCase();
     const color=own(COLORS,r.color)?r.color:Object.keys(COLORS).find(k=>norm(r.colour||r.color||name).includes(norm(k)))||"";
-    return {id:typeof r.id==="string"&&r.id.length<240?r.id:url,name,url,image:safeLink(r.image||r.image_url||r.aw_image_url||r.merchant_image_url||r.image_link),price:["BRL","R$"].includes(currency)?parsePrice(r.price??r.search_price??r.store_price):null,group,color,styles:[...new Set([...tags(r.styles||r.style,styleLabel),...Object.keys(styleRules).filter(k=>styleRules[k].test(desc))])],audience,sizes:array(r.sizes||r.size).map(x=>str(x,12).toUpperCase()).filter(Boolean).slice(0,25),occasion:tags(r.occasion||r.occasions,OCCASIONS),brand:str(r.brand||r.brand_name,80),shop:str(r.shop||r.merchant_name||r.advertiser_name,80),source:"catalog",updatedAt:str(r.source_updated_at||r.updatedAt,40),offerAvailable:r.offerAvailable===false||r.in_stock===false||r.is_for_sale===false?false:r.offerAvailable===true||r.in_stock===true&&r.is_for_sale===true?true:null};
+    const styles=[...new Set([...tags(r.styles||r.style,styleLabel),...Object.keys(styleRules).filter(k=>styleRules[k].test(desc))])];
+    const declaredOccasions=tags(r.occasion||r.occasions,OCCASIONS),occasion=new Set(declaredOccasions);
+    if(!occasion.size){
+      occasion.add("casual");
+      if(styles.some(k=>["elegante","social","classico","minimalista","preppy","oldmoney","workwear"].includes(k))||/\b(alfaiataria|social|blazer|mocassim|oxford|polo|camisa)\b/.test(desc))occasion.add("trabalho");
+      if(styles.some(k=>["esportivo","athleisure","outdoor"].includes(k))||/\b(treino|corrida|running|fitness|chuteira|legging)\b/.test(desc))occasion.add("esporte");
+      if(styles.some(k=>["noturno","glam","social","elegante"].includes(k))||/\b(festa|paete|cetim|scarpin)\b/.test(desc))occasion.add("evento");
+      if(styles.some(k=>["noturno","glam","gotico","alternativo","rock"].includes(k))||/\b(balada|noite|festa|paete)\b/.test(desc))occasion.add("noite");
+    }
+    return {id:typeof r.id==="string"&&r.id.length<240?r.id:url,name,url,image:safeLink(r.image||r.image_url||r.aw_image_url||r.merchant_image_url||r.image_link),price:["BRL","R$"].includes(currency)?parsePrice(r.price??r.search_price??r.store_price):null,group,color,styles,audience,sizes:array(r.sizes||r.size).map(x=>str(x,12).toUpperCase()).filter(Boolean).slice(0,25),occasion:[...occasion],brand:str(r.brand||r.brand_name,80),shop:str(r.shop||r.merchant_name||r.advertiser_name,80),source:"catalog",updatedAt:str(r.source_updated_at||r.updatedAt,40),offerAvailable:r.offerAvailable===false||r.in_stock===false||r.is_for_sale===false?false:r.offerAvailable===true||r.in_stock===true&&r.is_for_sale===true?true:null};
   }
   const seeds=[
    ["Polo de tricô","top","offwhite","elegante oldmoney classico preppy","masculino"],["Calça de alfaiataria reta","bottom","preto","elegante social classico minimalista","unissex"],["Camiseta oversized preta","top","preto","urbano alternativo rock skater","unissex"],["Coturno de plataforma","shoes","preto","gotico punk alternativo rock","unissex"],["Saia plissada xadrez","bottom","cinza","academia preppy grunge alternativo","feminino"],["Corpete de veludo preto","top","preto","gotico alternativo noturno","feminino"],["Camisa de flanela xadrez","layer","vermelho","grunge rock vintage","unissex"],["Jaqueta de couro com tachas","layer","preto","punk rock alternativo","unissex"],["Calça cargo utilitária","bottom","oliva","techwear workwear urbano outdoor","unissex"],["Blusa de renda manga longa","top","preto","gotico romantico noturno","feminino"],["Tênis de corrida","shoes","branco","esportivo athleisure","unissex"],["Legging de treino","bottom","preto","esportivo athleisure","feminino"],["Moletom amplo","top","cinza","athleisure casual skater normcore","unissex"],["Camisa de linho","top","bege","praia oldmoney elegante casual","unissex"],["Vestido floral midi","onepiece","rosa","romantico boho modesto","feminino"],["Bolsa de crochê","accessory","bege","boho praia vintage","feminino"],["Calça jeans flare","bottom","jeans","vintage boho y2k","feminino"],["Óculos anos 2000","accessory","preto","y2k vintage urbano","unissex"],["Camisa oxford azul","top","azul","preppy classico social oldmoney","unissex"],["Blazer estruturado","layer","marinho","social elegante classico oldmoney","unissex"],["Jaqueta de sarja","layer","caramelo","workwear vintage casual","unissex"],["Parka impermeável","layer","preto","outdoor techwear esportivo","unissex"],["Suéter de losangos","top","marrom","academia preppy vintage","unissex"],["Sapatilha com laço","shoes","rosa","coquette romantico","feminino"],["Saia longa de linho","bottom","offwhite","modesto boho praia","feminino"],["Camisa color block","top","azul","criativo maximalista vintage","unissex"],["Bolsa metalizada","accessory","cinza","futurista glam noturno","feminino"],["Vestido de paetês","onepiece","vinho","glam noturno maximalista","feminino"],["Camiseta básica branca","top","branco","normcore minimalista casual","unissex"],["Tênis de skate","shoes","preto","skater urbano casual","unissex"],["Mocassim de couro","shoes","marrom","classico oldmoney academia","unissex"],["Colar de corrente","accessory","cinza","punk alternativo urbano","unissex"],["Bermuda de sarja","bottom","bege","casual praia normcore","masculino"],["Vestido preto longo","onepiece","preto","gotico noturno modesto","feminino"],["Jaqueta bomber","layer","oliva","urbano alternativo casual","unissex"],["Calça jogger","bottom","cinza","athleisure esportivo casual","unissex"],["Camiseta de banda","top","preto","rock grunge alternativo","unissex"],["Camisa de cetim","top","vinho","glam noturno elegante","unissex"],["Blusa com laço","top","offwhite","coquette romantico","feminino"],["Jaqueta metalizada","layer","cinza","futurista maximalista urbano","unissex"]
@@ -1653,7 +1701,7 @@
     if(f.styles.length&&!p.styles.some(x=>f.styles.includes(x)))return false;
     if(f.groups.length&&!f.groups.includes(p.group))return false;
     if(f.colors.length&&!f.colors.includes(p.color))return false;
-    if(f.audience&&p.audience!==f.audience&&p.audience!=="unissex")return false;
+    if(f.audience&&p.audience&&p.audience!==f.audience&&p.audience!=="unissex")return false;
     if(f.query&&!norm([p.name,p.brand,p.shop,...p.styles.map(k=>styleLabel[k])].join(" ")).includes(norm(f.query)))return false;
     if(mode==="catalog"){
       if(f.min!==""&&(p.price===null||p.price<Number(f.min)))return false;
@@ -1675,14 +1723,37 @@
     if(remoteState==="loading"||(!force&&remoteState==="ready"))return;
     remoteState="loading";remoteError="";render();
     try{
-      const c=await cloud.catalogClient(),rows=[];let from=0;
-      while(true){
-        const {data:page,error}=await c.from("veste_catalog_products").select("id,name,description,affiliate_url,image_url,price,rrp_price,currency,group_key,merchant_category,brand,shop,color,audience,sizes,source_updated_at,in_stock,is_for_sale").eq("in_stock",true).eq("is_for_sale",true).order("id",{ascending:true}).range(from,from+999);
-        if(error)throw error;
-        rows.push(...(page||[]));if(!page||page.length<1000)break;from+=1000;
+      const c=await cloud.catalogClient(),columns="id,name,description,affiliate_url,image_url,price,rrp_price,currency,group_key,merchant_category,brand,shop,color,audience,sizes,source_updated_at,in_stock,is_for_sale",sampleSize=300,maxWindows=3;
+      const filtered=query=>{
+        query=query.eq("in_stock",true).eq("is_for_sale",true);
+        if(f.groups.length)query=query.in("group_key",f.groups);
+        if(f.audience)query=query.in("audience",[f.audience,"unissex",""]);
+        if(f.min!=="")query=query.gte("price",Number(f.min));
+        if(f.max!=="")query=query.lte("price",Number(f.max));
+        if(f.size)query=query.contains("sizes",[f.size]);
+        const search=String(f.query||"").replace(/[^\p{L}\p{N} ]/gu," ").replace(/\s+/g," ").trim().slice(0,60);
+        const brand=String(f.brand||"").replace(/[^\p{L}\p{N} ]/gu," ").replace(/\s+/g," ").trim().slice(0,60);
+        if(search)query=query.or("name.ilike.%"+search+"%,description.ilike.%"+search+"%,brand.ilike.%"+search+"%,shop.ilike.%"+search+"%");
+        if(brand)query=query.or("brand.ilike.%"+brand+"%,shop.ilike.%"+brand+"%");
+        return query;
+      };
+      const counted=await filtered(c.from("veste_catalog_products").select("id",{count:"exact",head:true}));
+      if(counted.error)throw counted.error;
+      const total=Math.max(0,Number(counted.count)||0),starts=[];
+      if(total){
+        const span=Math.max(0,total-sampleSize);
+        starts.push(0);
+        while(starts.length<Math.min(maxWindows,Math.ceil(total/sampleSize))){
+          const start=Math.min(span,Math.floor(Math.random()*(span+1)));
+          if(!starts.some(x=>Math.abs(x-start)<sampleSize))starts.push(start);
+          else if(starts.length===1&&span)starts.push(Math.floor(span/2));
+          else break;
+        }
       }
+      const batches=await Promise.all(starts.map(start=>filtered(c.from("veste_catalog_products").select(columns)).order("id",{ascending:true}).range(start,start+sampleSize-1)));
+      const rows=[],ids=new Set();for(const batch of batches){if(batch.error)throw batch.error;for(const row of batch.data||[])if(!ids.has(row.id)){ids.add(row.id);rows.push(row)}}
       remoteCatalog=rows.map(normalize).filter(Boolean);remoteState="ready";remoteChecked=Date.now();
-      const d=data(),missing=[...new Set(d.votes.filter(v=>v.liked&&v.item?.source==="catalog"&&!remoteCatalog.some(p=>p.id===v.id)).map(v=>v.id))],extra=[];for(let i=0;i<missing.length;i+=100){const {data:offers,error}=await c.from("veste_catalog_products").select("id,name,description,affiliate_url,image_url,price,rrp_price,currency,group_key,merchant_category,brand,shop,color,audience,sizes,source_updated_at,in_stock,is_for_sale").in("id",missing.slice(i,i+100));if(error)break;extra.push(...(offers||[]).map(normalize).filter(Boolean))}const changed=shop.update(d,[...remoteCatalog,...extra],new Date().toISOString());if(changed||d.votes.some(v=>v.liked&&v.item?.source==="catalog"))saveLocal();
+      const d=data(),missing=[...new Set(d.votes.filter(v=>v.liked&&v.item?.source==="catalog"&&!remoteCatalog.some(p=>p.id===v.id)).map(v=>v.id))],extra=[];for(let i=0;i<missing.length;i+=100){const {data:offers,error}=await c.from("veste_catalog_products").select(columns).in("id",missing.slice(i,i+100));if(error)break;extra.push(...(offers||[]).map(normalize).filter(Boolean))}const changed=shop.update(d,[...remoteCatalog,...extra],new Date().toISOString());if(changed||d.votes.some(v=>v.liked&&v.item?.source==="catalog"))saveLocal();
       if(remoteCatalog.length){source="catalog";current=null}
     }catch(e){support.diagnostic('catalog');remoteError=String(e?.message||e||"Falha ao carregar catálogo.").slice(0,160);remoteState="error"}
     render();
@@ -1718,7 +1789,7 @@
     return best;
   }
   function options(){
-    const d=data(),seen=seenProducts(d.votes),catalog=remoteCatalog.length?remoteCatalog:d.catalog.map(normalize).filter(Boolean),all=(source==="idea"||!catalog.length?seeds:catalog).filter(p=>!seen(p)&&matches(p,f,source)).filter(p=>{const a=shop.analyze(p,state.pieces);return (!f.avoidSimilar||!a.similar.length)&&(!f.gapsOnly||["missing","expand"].includes(a.gap))&&(!f.hasLooks||shop.looks(p,state.pieces).length>0)});
+    const d=data(),seen=seenProducts(d.votes),catalog=remoteCatalog.length?remoteCatalog:d.catalog.map(normalize).filter(Boolean),base=source==="idea"?seeds:catalog.length?catalog:(remoteState==="error"||remoteState==="ready"?seeds:[]),all=base.filter(p=>!seen(p)&&matches(p,f,source)).filter(p=>{const a=shop.analyze(p,state.pieces);return (!f.avoidSimilar||!a.similar.length)&&(!f.gapsOnly||["missing","expand"].includes(a.gap))&&(!f.hasLooks||shop.looks(p,state.pieces).length>0)});
     if(source==="catalog"&&f.order==="cheap")return all.sort((a,b)=>(a.price??Infinity)-(b.price??Infinity));
     if(source==="catalog"&&f.order==="expensive")return all.sort((a,b)=>(b.price??-1)-(a.price??-1));
     const votes=d.votes.slice(-200).map(v=>({...v,item:stored(v.item)})).filter(v=>v.item),st=shop.stats(d),model=shoppingProfile();return all.map(p=>({p,n:f.order==="explore"?p.styles.reduce((n,k)=>n+1/(1+(st[k]?.likes||0)+(st[k]?.passes||0)),0)+ranked(p,votes)*.02:ranked(p,votes)*.35+(shop.purchaseValue(p,state.pieces,model,false).score??30)})).sort((a,b)=>b.n-a.n).map(x=>x.p);
@@ -1741,7 +1812,7 @@
     const st=shop.stats(d),lead=Object.entries(st).filter(([,v])=>v.likes>0).sort((a,b)=>(b[1].likes-b[1].passes)-(a[1].likes-a[1].passes)).slice(0,6);
     $("discTaste").innerHTML='<strong>Seu gosto em evolução</strong><p>'+liked.length+' curtidas · '+d.votes.filter(v=>!v.liked).length+' rejeições</p>'+(lead.length?'<div class="disc-tags">'+lead.map(([k,v])=>'<span>'+E(styleLabel[k])+' · '+v.likes+' ♥</span>').join("")+'</div>':'<p>As escolhas vão revelar novos estilos.</p>');
     if(tab==="feed"){
-      const all=options();current=all.find(p=>p.id===current?.id)||nextDiscoveryCard(all,d.votes,f.order)||null;$("discCount").textContent=all.length+" opções ainda não avaliadas · "+(audienceLabel[f.audience]||"Todos");$("discCard").innerHTML=current?tile(current):'<div class="disc-body"><h2>Nenhuma peça nos filtros</h2><p>'+(source==="catalog"&&!d.catalog.length?"Importe um catálogo real ou explore inspirações.":"Altere os filtros ou reveja as peças puladas.")+'</p></div>';
+      const all=options();current=all.find(p=>p.id===current?.id)||nextDiscoveryCard(all,d.votes,f.order)||null;$("discCount").textContent=all.length+" opções ainda não avaliadas · "+(audienceLabel[f.audience]||"Todos");$("discCard").innerHTML=current?tile(current):remoteState==="loading"?'<div class="disc-body"><h2>Carregando ofertas…</h2><p>O VESTE está buscando uma amostra variada do catálogo.</p></div>':'<div class="disc-body"><h2>Nenhuma peça nos filtros</h2><p>'+(source==="catalog"&&!d.catalog.length?"Tente atualizar as ofertas ou explore referências de estilo.":"Altere os filtros ou reveja as peças puladas.")+'</p></div>';
       $("discLike").disabled=!current;$("discPass").disabled=!current;$("discUndo").disabled=!history.length;
     }else{
       const saved=liked.slice().reverse().map(v=>{const p=stored(v.item),h=shop.track(d,v.id)?.history||[];if(p&&h.length)p.price=h[h.length-1].price;return p}).filter(p=>p&&(radarMode!=="alerts"||p.offerAvailable!==false&&shop.signal(shop.track(d,p.id))?.fresh));
@@ -1770,9 +1841,9 @@
   function apply(){
     const n=blank();for(const [k,id] of [["styles","discStyles"],["groups","discGroups"],["colors","discColors"]])n[k]=selectedValues($(id));for(const k of fields)n[k]=$("disc-"+k).value.trim();
     if((n.min!==""&&Number(n.min)<0)||(n.max!==""&&Number(n.max)<0)||(n.min!==""&&n.max!==""&&Number(n.min)>Number(n.max))){notify("Confira o intervalo de preço.");return}
-    n.avoidSimilar=$("discAvoidSimilar").checked;n.gapsOnly=$("discGaps").checked;n.hasLooks=$("discHasLooks").checked;f=n;current=null;render();$("discFilters").open=false;
+    n.avoidSimilar=$("discAvoidSimilar").checked;n.gapsOnly=$("discGaps").checked;n.hasLooks=$("discHasLooks").checked;f=n;current=null;remoteState="idle";remoteCatalog=[];loadRemote(true).catch(()=>{});render();$("discFilters").open=false;
   }
-  function reset(){f=blank();f.audience=profileAudience();lastAudience=f.audience;for(const id of ["discStyles","discGroups","discColors"])$(id).querySelectorAll("input").forEach(i=>i.checked=false);for(const k of fields)$("disc-"+k).value=f[k];for(const id of ["discAvoidSimilar","discGaps","discHasLooks"])$(id).checked=false;current=null;render()}
+  function reset(){f=blank();f.audience=profileAudience();lastAudience=f.audience;for(const id of ["discStyles","discGroups","discColors"])$(id).querySelectorAll("input").forEach(i=>i.checked=false);for(const k of fields)$("disc-"+k).value=f[k];for(const id of ["discAvoidSimilar","discGaps","discHasLooks"])$(id).checked=false;current=null;remoteState="idle";remoteCatalog=[];loadRemote(true).catch(()=>{});render()}
   function mount(){
     if(mounted)return;mounted=true;source="catalog";
     document.querySelector(".nav-list").insertAdjacentHTML("beforeend",'<button class="nav-btn" data-route="discover"><span class="nav-icon">◇</span> Descobrir</button>');
@@ -1801,11 +1872,10 @@
     $("discCard").addEventListener("touchstart",e=>{const t=e.touches[0];touch=e.target.closest("a,button,details,input,select,label")?null:[t.clientX,t.clientY]},{passive:true});
     $("discCard").addEventListener("touchcancel",()=>{touch=null},{passive:true});
     $("discCard").addEventListener("touchend",e=>{if(!touch)return;const t=e.changedTouches[0],dx=t.clientX-touch[0],dy=t.clientY-touch[1];touch=null;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.6)vote(dx>0)},{passive:true});
-    loadRemote().catch(()=>{});
-    const oldNavigate=navigate;navigate=function(route){if(route!=="discover")return oldNavigate(route);if(remoteState!=="loading"&&Date.now()-remoteChecked>15*60*1000)loadRemote(true).catch(()=>{});state.view=route;document.querySelectorAll(".view").forEach(el=>el.classList.toggle("active",el.id==="view-discover"));document.querySelectorAll("[data-route]").forEach(el=>el.classList.toggle("active",el.dataset.route===route));$("topbarTitle").textContent="SEU RADAR";render();window.scrollTo({top:0,behavior:"smooth"})};
+    const oldNavigate=navigate;navigate=function(route){if(route!=="discover")return oldNavigate(route);if(remoteState!=="loading"&&(remoteState==="idle"||Date.now()-remoteChecked>15*60*1000))loadRemote(true).catch(()=>{});state.view=route;document.querySelectorAll(".view").forEach(el=>el.classList.toggle("active",el.id==="view-discover"));document.querySelectorAll("[data-route]").forEach(el=>el.classList.toggle("active",el.dataset.route===route));$("topbarTitle").textContent="SEU RADAR";render();window.scrollTo({top:0,behavior:"smooth"})};
     const oldRender=renderAll;renderAll=function(){oldRender();if(state.view==="discover")render()};
   }
-  function useProfile(force=false){if(!mounted)return;const next=profileAudience();if(!force&&next===lastAudience)return;lastAudience=next;f.audience=next;$("disc-audience").value=next;current=null;render()}
+  function useProfile(force=false){if(!mounted)return;const next=profileAudience();if(!force&&next===lastAudience)return;lastAudience=next;f.audience=next;$("disc-audience").value=next;current=null;remoteState="idle";remoteCatalog=[];if(state.view==="discover")loadRemote(true).catch(()=>{});render()}
   return {mount,loadRemote,normalize,parsePrice,matches,csv,blank,seeds,styleLabel,shop,useProfile};
 }
 
@@ -2211,7 +2281,7 @@
 
   // Support, privacy requests and opt-in minimal diagnostic codes.
   const support=(()=>{
-    const E=escapeHTML,release='7.5.1',kindLabels={bug:'Problema / bug',suggestion:'Sugestão',experience:'Experiência de uso',privacy:'Privacidade e dados',delete_account:'Exclusão da conta'},statusLabels={new:'Recebido',review:'Em análise',resolved:'Concluído',cancelled:'Cancelado'};
+    const E=escapeHTML,release='7.5.2',kindLabels={bug:'Problema / bug',suggestion:'Sugestão',experience:'Experiência de uso',privacy:'Privacidade e dados',delete_account:'Exclusão da conta'},statusLabels={new:'Recebido',review:'Em análise',resolved:'Concluído',cancelled:'Cancelado'};
     let mounted=false,loading=false,consent=()=>{try{return cloud.canEnter()&&localStorage.getItem(STORAGE_KEY+':diagnostics-consent-v1')==='yes'}catch{return false}};const recent=new Map();
     async function diagnostic(code){if(!consent()||!cloud.canEnter()||!navigator.onLine||!['boot','sync','diary_load','diary_save','catalog','weather'].includes(code))return;const now=Date.now();if(now-(recent.get(code)||0)<60000)return;recent.set(code,now);try{const c=await cloud.catalogClient();if(consent())await c.rpc('veste_record_diagnostic',{p_code:code})}catch{}}
     async function submit(kind,message,rating=null,context=false,affectedPage=null){
