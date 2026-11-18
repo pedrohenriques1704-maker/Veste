@@ -36,7 +36,7 @@ def db(path,payload=None):
     if not https(base,{"zodyzmeeossstkiwanqi.supabase.co"}): raise ValueError("Invalid Supabase host")
     key=os.environ["SUPABASE_SERVICE_ROLE_KEY"]
     req=urllib.request.Request(base+"/rest/v1/"+path,data=None if payload is None else json.dumps(payload,ensure_ascii=False).encode(),headers={"apikey":key,"Authorization":"Bearer "+key,"Content-Type":"application/json","Prefer":"return=minimal,resolution=merge-duplicates"})
-    with urllib.request.urlopen(req,timeout=90) as r:
+    with urllib.request.urlopen(req,timeout=300) as r:
         b=r.read(); return json.loads(b) if b else None
 def log(kind,ok,n,detail):
     db("rpc/veste_commerce_sync_log",dict(sync_kind=kind,success=ok,record_count=n,summary=detail))
