@@ -197,6 +197,11 @@ def combine(items):
             out[x["id"]]={**choose,"sizes":sizes,"variant_count":count}
         else: out[x["id"]]=x
     return list(out.values())
+def bounded_catalog(products, limit=8000):
+    """Keep a stable, merchant-wide sample so large feeds remain cheap to refresh."""
+    if len(products) <= limit: return products
+    return sorted(products, key=lambda p: hashlib.sha256(p["id"].encode()).digest())[:limit]
+
 def sync_catalog():
     publisher=os.environ["AWIN_PUBLISHER_ID"].strip()
     key=os.environ["AWIN_FEED_KEY"].strip()
@@ -258,15 +263,19 @@ def sync_catalog():
         if not products: raise SyncIssue("product_feed_no_supported_rows")
         if not available: raise SyncIssue("product_feed_no_available_rows")
         if variants < expected*.7: raise SyncIssue("product_feed_coverage_below_70_percent")
-        # Keep the existing atomic database coverage, identity and staleness guards.
-        try: db("rpc/veste_catalog_snapshot_import",{"merchant":mid,"records":products,"expected_rows":expected})
+        # Keep the snapshot atomic while bounding very large merchant payloads.
+        imported=bounded_catalog(products)
+        imported_expected=sum(p["variant_count"] for p in imported)
+        if len(imported) != len(products):
+            print(f"catalog merchant={mid} bounded_products={len(imported)} bounded_variants={imported_expected}",flush=True)
+        try: db("rpc/veste_catalog_snapshot_import",{"merchant":mid,"records":imported,"expected_rows":imported_expected})
         except urllib.error.HTTPError as e:
             # Only known database exception phrases are permitted; never log response bodies.
             try: reason=json.loads(e.read().decode()).get("message","")
             except Exception: reason=""
             codes={"Catalog identity/coverage mismatch":"db_identity_coverage_mismatch","Feed older than existing catalog":"db_feed_older","Incomplete or unsupported feed":"db_incomplete_feed","Invalid catalog batch":"db_invalid_batch","Invalid catalog row":"db_invalid_row"}
             raise SyncIssue(codes.get(reason,"db_import_http_"+str(e.code))) from None
-        total+=len(products)
+        total+=len(imported)
     missing=sorted(allowed-set(selected))
     if missing:
         print("catalog pending merchants="+",".join(map(str,missing)),flush=True)
