@@ -33,6 +33,6 @@ jobs:
         run: |
           test -n "$SUPABASE_SERVICE_ROLE_KEY" && test -n "$AWIN_PUBLISHER_ID" && test -n "$AWIN_FEED_KEY" && test -n "$AWIN_API_TOKEN"
       - name: Test catalog importer
-        run: python3 -m unittest discover -s tests -p test_awin_sync.py
+        run: AWIN_AUTO_JOINED=0 python3 -m unittest discover -s tests -p test_awin_sync.py
       - name: Synchronize
         run: python3 scripts/awin_sync.py
